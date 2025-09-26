@@ -1,0 +1,25 @@
+{
+  "next_ids": {},
+  "users": {
+    "1": { "id": 1, "vorname": "Alex", "name": "Test", "email": "alex@example.com", "avatar": null }
+  },
+  "auth": { "tokens": {} },
+  "friends": [],
+  "friend_requests": [],
+  "challenges": {
+    "49": {
+      "id": 49,
+      "name": "Wasser trinken",
+      "beschreibung": "Taege 2L",
+      "ownerId": 1,
+      "faelligeWochentage": [1,2,3,4,5],
+      "hinzugefuegtAt": 1695657600000
+    }
+  },
+  "challenge_members": [ { "challengeId": 49, "userId": 1 } ],
+  "challenge_logs": { "49": [] },
+  "challenge_chat": { "49": [] },
+  "challenge_invites": [],
+  "notifications": [],
+  "blocked": { "49": [] }
+}
