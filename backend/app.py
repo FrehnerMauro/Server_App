@@ -13,9 +13,11 @@ def create_app():
     app.register_blueprint(feed.bp)
     app.register_blueprint(notifications.bp)
     app.register_blueprint(admin.bp)
+    
 
     @app.get("/")
     def root():
+        
         return {"ok": True, "service": "social-habit-backend"}
 
     return app

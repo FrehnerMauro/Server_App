@@ -6,25 +6,84 @@ from backend.common.utils import day_window_ms_for_local_date
 from backend.models.schemas import CreateChallengeBody, ChatBody, ConfirmBody, ChallengeInviteBody
 from backend.services.store_confirm import add_challenge_confirm
 from backend.services.stats import update_stats_for_challenge_today
+import datetime
+from datetime import datetime, timedelta, timezone
+from backend.services.stats import challenge_update_stats  # statt update_stats_for_challenge_today
+from collections import defaultdict
+
+
 
 bp = Blueprint("challenges", __name__)
 
 # -------- List --------
+def _to_local_date_from_ts(ts: int, tz_offset_min: int) -> datetime.date:
+    """Akzeptiert Sekunden oder Millisekunden."""
+    if ts > 10**12:  # ms -> s
+        ts = ts // 1000
+    tz = timezone(timedelta(minutes=tz_offset_min))
+    return datetime.fromtimestamp(int(ts), tz).date()
 
-@bp.get("/challenges")
+def _daterange(d0: datetime.date, d1: datetime.date):
+    cur = d0
+    while cur <= d1:
+        yield cur
+        cur = cur + timedelta(days=1)
+def _to_local_date(ts_any: int | str, tz_offset_min: int) -> datetime.date:
+    """
+    Akzeptiert Sekunden oder Millisekunden.
+    """
+    tz = timezone(timedelta(minutes=tz_offset_min))
+
+    ts = int(ts_any)
+    # Wenn Millisekunden: auf Sekunden runterteilen
+    # 10**12 ist ~2001-09-09 in ms; alles darueber ist ziemlich sicher ms.
+    if ts > 10**12:
+        ts = ts // 1000
+
+    return datetime.fromtimestamp(ts, tz).date()
+
+def _daterange(d0: datetime.date, d1: datetime.date):
+    cur = d0
+    while cur <= d1:
+        yield cur
+        cur = cur + timedelta(days=1)
+
+
+@bp.get("/challenges/list")
 @auth_required
 def list_challenges():
     st = state()
     with_today = (request.args.get("withToday") or "").lower() == "true"
-    tz = int(request.args.get("tzOffsetMinutes", "0"))
+    tz = int(request.args.get("tzOffsetMinutes", "0"))  # falls spaeter nuetzlich
+    uid = request.uid
+
+    # alle Challenge-IDs, bei denen der User Mitglied ist
+    member_ch_ids = {
+        m["challengeId"]
+        for m in st.get("challenge_members", [])
+        if m.get("userId") == uid
+    }
+
     res = []
-    for ch in st["challenges"].values():
+    for ch in st.get("challenges", {}).values():
+        # nur Challenges behalten, wo User Mitglied ist (oder Owner, wenn du das willst)
+        if ch.get("id") not in member_ch_ids and ch.get("ownerId") != uid:
+            continue
+
         item = dict(ch)
+
         if with_today:
             logs = st.get("challenge_logs", {}).get(str(ch["id"]), [])
-            status = "done" if logs else "open"
-            item["today"] = {"status": status, "pending": status == "open"}
+            # Minimal: "done", wenn es irgendeinen Log gibt; sonst "open".
+            # (Wenn du es pro-User willst: any(l.get("userId")==uid for l in logs))
+            status = "done" if any(l.get("userId") == uid for l in logs) else "open"
+            item["today"] = {
+                "status": status,
+                "pending": status == "open"
+            }
+
         res.append(item)
+
     return jsonify(res)
 
 @bp.post("/challenges")
@@ -43,6 +102,9 @@ def create_challenge():
         "beschreibung": body.beschreibung,
         "ownerId": request.uid,
         "faelligeWochentage": body.faelligeWochentage,
+        "startAt": body.startAt or int(datetime.now().timestamp()),   # 👈 hier
+        "dauerTage": body.dauerTage,                                 # 👈 hier
+        "erlaubteFailsTage": body.erlaubteFailsTage,                 # optional
         "hinzugefuegtAt": now_ms()
     }
     st["challenges"][str(cid)] = ch
@@ -55,17 +117,13 @@ def create_challenge():
 # -------- Detail / Members / Activity --------
 
 @bp.get("/challenges/<int:cid>")
-@auth_required
+#@auth_required
 def challenge_detail(cid: int):
     ch = state()["challenges"].get(str(cid))
     if not ch:
         return jsonify({"error": "not_found"}), 404
     return jsonify(ch)
 
-@bp.get("/challenges/<int:cid>/members")
-def bad_route():
-    # absichtlich: damit Tippfehler schnell auffaellt
-    return jsonify({"error": "typo"}), 404
 
 @bp.get("/challenges/<int:cid>/members")
 @auth_required
@@ -263,41 +321,91 @@ def leave_challenge(cid: int):
     return jsonify({"ok": True})
 
 # -------- Stats / Blocked / Today-Status / Fail-Logs --------
-
-@bp.get("/challenges/<int:cid>/stats")
-@auth_required
-def challenge_stats(cid: int):
-    tz = int(request.args.get("tzOffsetMinutes", "0"))
-    st = state()
-    today = st.get("challenge_stats", {}).get(str(cid), {}).get("today", {"status": "open", "pending": True})
-    resp = {
-        "challengeId": cid,
-        "today": today,
-        "totals": {"confirms": len(st.get("challenge_logs", {}).get(str(cid), []))}
-    }
-    return jsonify(resp)
-
-@bp.post("/challenges/<int:cid>/stats/recalc")
-@auth_required
+@bp.route("/challenges/<int:cid>/stats/recalc", methods=["POST","GET"])
 def challenge_stats_recalc(cid: int):
     tz = int(request.args.get("tzOffsetMinutes", "0"))
-    update_stats_for_challenge_today(cid, tz)
-    return jsonify({"ok": True})
+    result = challenge_update_stats(cid, tz_offset_minutes=tz)
+    return jsonify(result)
 
-@bp.get("/challenges/<int:cid>/blocked")
-@auth_required
-def challenge_blocked(cid: int):
+
+
+
+@bp.get("/challenges/<int:cid>/stats")
+def challenge_stats_users(cid: int):
+    tz_offset = int(request.args.get("tzOffsetMinutes", "0"))
     st = state()
-    return jsonify({"challengeId": cid, "blocked": st.get("blocked", {}).get(str(cid), [])})
 
-@bp.get("/challenges/<int:cid>/today-status")
-@auth_required
-def challenge_today_status(cid: int):
-    st = state()
-    today = st.get("challenge_stats", {}).get(str(cid), {}).get("today", {"status": "open", "pending": True})
-    return jsonify({"challengeId": cid, "today": today})
+    ch = st.get("challenges", {}).get(str(cid)) or {}
+    if not ch:
+        return jsonify({"error": "not_found"}), 404
 
-@bp.get("/challenges/<int:cid>/logs/fails")
-@auth_required
-def challenge_fail_logs(cid: int):
-    return jsonify({"challengeId": cid, "fails": []})
+    # Challenge-Metadaten (nur zur Info im Response)
+    start_at = ch.get("startAt")
+    dauer_tage = ch.get("dauerTage") or ch.get("days")
+    faellige = ch.get("faelligeWochentage") or []
+    erlaubte_fails = ch.get("erlaubteFailsTage")
+    steak = ch.get("streak")  # bleibt "steak", wenn dein iOS das so mapped
+
+    # ---- Stats aus dem Speicher lesen ----
+    stats_all = st.get("challenge_stats", {}).get(str(cid), {})
+    per_user_map = stats_all.get("perUser", {})  # { "1": {...}, "2": {...} }
+    today_global = stats_all.get("today") or {"status": "not_pending", "pending": False}
+
+    def map_today_for_user(u: dict) -> dict:
+        """Baut dein gewünschtes Today-Objekt pro User:
+           status:  'offen' | 'gesperrt' | 'Abgeschlossen'
+           pending: Bool
+           erledigt: Bool
+        """
+        blocked = str(u.get("blocked", "none"))
+        last_today = str(u.get("lastTodayState", "nicht_pending"))
+
+        if blocked == "completed":
+            return {"status": "Abgeschlossen", "pending": False, "erledigt": True}
+        if blocked == "gesperrt":
+            return {"status": "gesperrt", "pending": False, "erledigt": False}
+
+        # offen
+        return {
+            "status": "offen",
+            "pending": last_today == "pending",
+            "erledigt": last_today == "erledigt",
+        }
+
+    # Array aus dem dict bauen (praktisch für iOS)
+    per_user = []
+    for uid_str, u in per_user_map.items():
+        try:
+            uid = int(uid_str)
+        except Exception:
+            # Falls Key bereits int ist (sehr selten), fallback:
+            uid = int(u.get("userId", 0)) if isinstance(uid_str, dict) else 0
+
+        per_user.append({
+            "userId": uid,
+            "confCount": int(u.get("conf_count", 0)),
+            "failCount": int(u.get("fail_count", 0)),
+            "streak": int(u.get("streak", 0)),
+            "negStreak": int(u.get("neg_streak", 0)),
+            "challenge_status": u.get("blocked", "none"),       # "none" | "gesperrt" | "completed"
+            "status": u.get("state", "nicht_pending"),  # Zustand für den nächsten Tag
+        })
+
+    # Range grob auffüllen (falls startAt fehlt, lasse es leer)
+    tz = timezone(timedelta(minutes=tz_offset))
+    today_local = datetime.now(tz).date()
+    def _to_local_date_from_ts(ts: int) -> str | None:
+        if not ts:
+            return None
+        if ts > 10**12:  # ms -> s
+            ts = ts // 1000
+        return datetime.fromtimestamp(int(ts), tz).date().isoformat()
+
+    resp = {
+        "challengeId": cid,
+        "dauerTage": dauer_tage,
+        "faelligeWochentage": faellige,
+        "erlaubteFailsTage": erlaubte_fails,
+        "perUser": per_user,
+    }
+    return jsonify(resp)

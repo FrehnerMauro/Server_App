@@ -44,3 +44,13 @@ class ChallengeInviteBody(BaseModel):
 class FriendReqBody(BaseModel):
     toUserId: int
     message: Optional[str] = None
+    
+    
+class LogChallengeBody(BaseModel):
+    challenge_id: int
+    member_id: int
+    conf_count: int
+    fail_count: int
+    streak: int
+    blocked: bool
+    state: str  # Pending, not Pending, completed

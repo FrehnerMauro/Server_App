@@ -205,10 +205,23 @@ class API:
         url = join_url(self.base, f"/feed/{post_id}/like")
         return fetch_json("POST", url, self.token)
 
+    def feed_unlike(self, post_id: int):
+        url = join_url(self.base, f"/feed/{post_id}/unlike")
+        return fetch_json("POST", url, self.token)
+
     def feed_comment(self, post_id: int, text: str):
-        url = join_url(self.base, f"/feed/{post_id}/comment")
+        url = join_url(self.base, f"/feed/{post_id}/comments")
         body = {"text": text}
         return fetch_json("POST", url, self.token, json_body=body)
+
+    # Profile
+    def my_posts(self):
+        url = join_url(self.base, "/me/posts")
+        return fetch_json("GET", url, self.token)
+
+    def user_posts(self, uid: int):
+        url = join_url(self.base, f"/users/{uid}/posts")
+        return fetch_json("GET", url, self.token)
 
     # Notifications
     def notifications(self):
@@ -246,7 +259,7 @@ class UserGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Habit User GUI")
-        self.geometry("1200x820")
+        self.geometry("1280x900")
 
         # State
         self.api: Optional[API] = None
@@ -322,6 +335,10 @@ class UserGUI(tk.Tk):
         self.tab_notif = ttk.Frame(self.tabs); self.tabs.add(self.tab_notif, text="Notifications")
         self._build_notifications_tab(self.tab_notif)
 
+        # Profile
+        self.tab_prof = ttk.Frame(self.tabs); self.tabs.add(self.tab_prof, text="Profile")
+        self._build_profile_tab(self.tab_prof)
+
     def _build_output(self):
         wrap = ttk.Frame(self)
         wrap.pack(fill=tk.BOTH, expand=False, padx=10, pady=(0,10))
@@ -365,12 +382,12 @@ class UserGUI(tk.Tk):
         ttk.Entry(mid, textvariable=self.chat_text_var, width=28).pack(side=tk.LEFT, padx=(12,4))
         ttk.Button(mid, text="Chat senden", command=self.on_ch_chat_send).pack(side=tk.LEFT)
 
-        # **UEBERDEUTLICHER BUTTON** -> oeffnet Confirm-Dialog
+        # **Deutlich sichtbarer Button** -> oeffnet Confirm-Dialog
         big = ttk.Frame(root); big.pack(fill=tk.X, padx=6, pady=(0,6))
         ttk.Button(big, text="Bestaetigen posten … (Dialog)", command=self.open_confirm_dialog)\
             .pack(side=tk.RIGHT, padx=4)
 
-        # Inline-Confirm in eigenem LabelFrame (grid, bricht automatisch um)
+        # Inline-Confirm in eigenem LabelFrame (grid)
         confirm = ttk.LabelFrame(root, text="Bestaetigen posten (Inline)")
         confirm.pack(fill=tk.X, padx=6, pady=(0,6))
         r = 0
@@ -459,7 +476,6 @@ class UserGUI(tk.Tk):
             self.confirm_img.set(v_img.get().strip())
             self.confirm_cap.set(v_cap.get().strip())
             self.confirm_vis.set(v_vis.get().strip() or "freunde")
-            # Auto set date/tz/timestamp wenn leer
             if not (self.confirm_ts.get() or "").strip():
                 self.confirm_ts.set(str(int(time.time()*1000)))
             if not (self.confirm_tz.get() or "").strip():
@@ -478,10 +494,11 @@ class UserGUI(tk.Tk):
         self.feed_post_id = tk.StringVar()
         ttk.Entry(bar, textvariable=self.feed_post_id, width=8).pack(side=tk.LEFT)
         ttk.Button(bar, text="Like", command=self.on_feed_like).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bar, text="Unlike", command=self.on_feed_unlike).pack(side=tk.LEFT, padx=4)
         ttk.Button(bar, text="Kommentieren", command=self.on_feed_comment).pack(side=tk.LEFT, padx=4)
 
-        self.tbl_feed = ttk.Treeview(root, columns=["id","userId","action","timestamp","caption","imageUrl"], show="headings", height=18)
-        for c,w in zip(["id","userId","action","timestamp","caption","imageUrl"], [60,80,100,140,300,380]):
+        self.tbl_feed = ttk.Treeview(root, columns=["id","userId","action","timestamp","caption","imageUrl","likesCount","commentsCount","likedByMe"], show="headings", height=18)
+        for c,w in zip(["id","userId","action","timestamp","caption","imageUrl","likesCount","commentsCount","likedByMe"], [60,80,100,140,280,360,100,120,100]):
             self.tbl_feed.heading(c, text=c)
             self.tbl_feed.column(c, width=w, stretch=True)
         self.tbl_feed.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
@@ -504,13 +521,11 @@ class UserGUI(tk.Tk):
         ttk.Entry(bar, textvariable=self.req_msg, width=24).pack(side=tk.LEFT, padx=4)
         ttk.Button(bar, text="Freund anfragen", command=self.on_send_friend_request).pack(side=tk.LEFT)
 
-        # Entfernen (kein Server-Endpoint -> nur Hinweis)
         ttk.Label(bar, text="friend userId entfernen:").pack(side=tk.LEFT, padx=(12,2))
         self.rm_uid = tk.StringVar()
         ttk.Entry(bar, textvariable=self.rm_uid, width=8).pack(side=tk.LEFT)
         ttk.Button(bar, text="Entfernen", command=self.on_remove_friend).pack(side=tk.LEFT, padx=4)
 
-        # Requests
         bar2 = ttk.Frame(root); bar2.pack(fill=tk.X, padx=6, pady=(0,6))
         ttk.Button(bar2, text="Requests Incoming", command=lambda: self.on_friend_requests("incoming")).pack(side=tk.LEFT)
         ttk.Button(bar2, text="Requests Outgoing", command=lambda: self.on_friend_requests("outgoing")).pack(side=tk.LEFT, padx=6)
@@ -536,7 +551,6 @@ class UserGUI(tk.Tk):
         ttk.Entry(bar, textvariable=self.notif_id, width=8).pack(side=tk.LEFT)
         ttk.Button(bar, text="Mark Read", command=self.on_notif_read).pack(side=tk.LEFT, padx=6)
 
-        # Challenge Invites
         ttk.Button(bar, text="Invites Incoming", command=lambda: self.on_invites("incoming")).pack(side=tk.LEFT, padx=(20,4))
         ttk.Button(bar, text="Invites Outgoing", command=lambda: self.on_invites("outgoing")).pack(side=tk.LEFT, padx=4)
         ttk.Label(bar, text="inviteId:").pack(side=tk.LEFT, padx=(12,2))
@@ -558,6 +572,31 @@ class UserGUI(tk.Tk):
             self.tbl_inv.heading(c, text=c)
             self.tbl_inv.column(c, width=w, stretch=True)
         self.tbl_inv.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0,8))
+
+    # ---------- Profile Tab ----------
+
+    def _build_profile_tab(self, root: ttk.Frame):
+        bar = ttk.Frame(root); bar.pack(fill=tk.X, padx=6, pady=6)
+        ttk.Button(bar, text="Meine Posts laden", command=self.on_my_posts).pack(side=tk.LEFT)
+        ttk.Label(bar, text="userId:").pack(side=tk.LEFT, padx=(12,2))
+        self.prof_uid = tk.StringVar()
+        ttk.Entry(bar, textvariable=self.prof_uid, width=8).pack(side=tk.LEFT)
+        ttk.Button(bar, text="User Posts laden", command=self.on_user_posts).pack(side=tk.LEFT, padx=4)
+
+        ttk.Label(bar, text="postId:").pack(side=tk.LEFT, padx=(12,2))
+        self.prof_pid = tk.StringVar()
+        ttk.Entry(bar, textvariable=self.prof_pid, width=8).pack(side=tk.LEFT)
+        ttk.Button(bar, text="Like", command=self.on_prof_like).pack(side=tk.LEFT, padx=3)
+        ttk.Button(bar, text="Unlike", command=self.on_prof_unlike).pack(side=tk.LEFT, padx=3)
+        ttk.Button(bar, text="Kommentieren", command=self.on_prof_comment).pack(side=tk.LEFT, padx=3)
+
+        self.tbl_prof = ttk.Treeview(root, columns=["id","userId","visibility","timestamp","caption","imageUrl","likesCount","commentsCount"],
+                                     show="headings", height=18)
+        for c,w in zip(["id","userId","visibility","timestamp","caption","imageUrl","likesCount","commentsCount"],
+                       [60,80,90,140,300,280,100,120]):
+            self.tbl_prof.heading(c, text=c)
+            self.tbl_prof.column(c, width=w, stretch=True)
+        self.tbl_prof.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
 
     # ---------- Utilities ----------
 
@@ -764,7 +803,6 @@ class UserGUI(tk.Tk):
 
         image_url = self.confirm_img.get().strip()
         if not image_url:
-            # Falls leer (z. B. nur Dialog verwendet), frage schnell ab:
             image_url = simpledialog.askstring("imageUrl", "Bitte imageUrl eingeben (oder data:image/...):") or ""
             image_url = image_url.strip()
             if not image_url:
@@ -809,12 +847,15 @@ class UserGUI(tk.Tk):
             flat.append({
                 "id": it.get("id"),
                 "userId": it.get("userId"),
-                "action": it.get("action"),
+                "action": it.get("action") or it.get("type"),
                 "timestamp": it.get("timestamp"),
                 "caption": cap,
-                "imageUrl": img
+                "imageUrl": img,
+                "likesCount": it.get("likesCount"),
+                "commentsCount": it.get("commentsCount"),
+                "likedByMe": it.get("likedByMe"),
             })
-        self._fill_tree(self.tbl_feed, flat, ["id","userId","action","timestamp","caption","imageUrl"])
+        self._fill_tree(self.tbl_feed, flat, ["id","userId","action","timestamp","caption","imageUrl","likesCount","commentsCount","likedByMe"])
         self.set_json(data or err)
 
     def on_feed_like(self):
@@ -823,9 +864,19 @@ class UserGUI(tk.Tk):
             messagebox.showwarning("Hinweis","postId fehlt"); return
         api = self._get_api()
         data, err = api.feed_like(pid)
-        if err:
-            messagebox.showwarning("Info","Server hat evtl. keinen Like-Endpoint. Antwort im Output.")
         self.set_json(data or err)
+        if not err:
+            self.on_feed()
+
+    def on_feed_unlike(self):
+        pid = safe_int((self.feed_post_id.get() or "").strip())
+        if not pid:
+            messagebox.showwarning("Hinweis","postId fehlt"); return
+        api = self._get_api()
+        data, err = api.feed_unlike(pid)
+        self.set_json(data or err)
+        if not err:
+            self.on_feed()
 
     def on_feed_comment(self):
         pid = safe_int((self.feed_post_id.get() or "").strip())
@@ -835,9 +886,9 @@ class UserGUI(tk.Tk):
         if not text: return
         api = self._get_api()
         data, err = api.feed_comment(pid, text)
-        if err:
-            messagebox.showwarning("Info","Server hat evtl. keinen Comment-Endpoint. Antwort im Output.")
         self.set_json(data or err)
+        if not err:
+            self.on_feed()
 
     # ---------- Friends ----------
 
@@ -950,6 +1001,68 @@ class UserGUI(tk.Tk):
         data, err = api.decline_challenge_invite(rid)
         self.set_json(data or err)
 
+    # ---------- Profile Handlers ----------
+
+    def on_my_posts(self):
+        api = self._get_api()
+        data, err = api.my_posts()
+        rows = pick_list(data) if not err else []
+        self._fill_tree(self.tbl_prof, rows, ["id","userId","visibility","timestamp","caption","imageUrl","likesCount","commentsCount"])
+        self.set_json(data or err)
+
+    def on_user_posts(self):
+        uid = safe_int((self.prof_uid.get() or "").strip())
+        if not uid:
+            messagebox.showwarning("Hinweis","userId fehlt"); return
+        api = self._get_api()
+        data, err = api.user_posts(uid)
+        rows = pick_list(data) if not err else []
+        self._fill_tree(self.tbl_prof, rows, ["id","userId","visibility","timestamp","caption","imageUrl","likesCount","commentsCount"])
+        self.set_json(data or err)
+
+    def on_prof_like(self):
+        pid = safe_int((self.prof_pid.get() or "").strip())
+        if not pid:
+            messagebox.showwarning("Hinweis","postId fehlt"); return
+        api = self._get_api()
+        data, err = api.feed_like(pid)
+        self.set_json(data or err)
+        if not err:
+            # Refresh je nachdem, welches Grid gerade relevant ist
+            if (self.prof_uid.get() or "").strip():
+                self.on_user_posts()
+            else:
+                self.on_my_posts()
+
+    def on_prof_unlike(self):
+        pid = safe_int((self.prof_pid.get() or "").strip())
+        if not pid:
+            messagebox.showwarning("Hinweis","postId fehlt"); return
+        api = self._get_api()
+        data, err = api.feed_unlike(pid)
+        self.set_json(data or err)
+        if not err:
+            if (self.prof_uid.get() or "").strip():
+                self.on_user_posts()
+            else:
+                self.on_my_posts()
+
+    def on_prof_comment(self):
+        pid = safe_int((self.prof_pid.get() or "").strip())
+        if not pid:
+            messagebox.showwarning("Hinweis","postId fehlt"); return
+        text = simpledialog.askstring("Kommentieren", "Kommentar-Text:")
+        if not text:
+            return
+        api = self._get_api()
+        data, err = api.feed_comment(pid, text)
+        self.set_json(data or err)
+        if not err:
+            if (self.prof_uid.get() or "").strip():
+                self.on_user_posts()
+            else:
+                self.on_my_posts()
+
 # ---------------------------------
 # main
 # ---------------------------------
@@ -960,3 +1073,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
+    
+    
+    

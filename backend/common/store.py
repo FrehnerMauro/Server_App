@@ -168,3 +168,35 @@ def _prepare_for_json(obj: Any) -> Any:
     if isinstance(obj, set):
         return sorted(list(obj))
     return obj
+
+
+def add_challenge_user_log(challenge_id: int,
+                           member_id: int,
+                           conf_count: int,
+                           fail_count: int,
+                           streak: int,
+                           blocked: bool,
+                           state: str,
+                           ts: int | None = None) -> dict:
+    """
+    Speichert einen User-Log-Eintrag für eine Challenge.
+    """
+    st = state()
+    logs_for_challenge = st.setdefault("challenge_user_logs", {})
+    logs_for_user = logs_for_challenge.setdefault(str(challenge_id), {}).setdefault(str(member_id), [])
+
+    entry = {
+        "id": next_id(st, "challenge_user_log_id"),
+        "challenge_id": challenge_id,
+        "member_id": member_id,
+        "conf_count": conf_count,
+        "fail_count": fail_count,
+        "streak": streak,
+        "blocked": blocked,
+        "state": state,
+        "timestamp": ts or now_ms()
+    }
+
+    logs_for_user.append(entry)
+    save()
+    return entry
