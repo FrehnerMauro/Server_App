@@ -5,11 +5,13 @@ from backend.common.store import state, save, now_ms, next_id
 from backend.common.utils import day_window_ms_for_local_date
 from backend.models.schemas import CreateChallengeBody, ChatBody, ConfirmBody, ChallengeInviteBody
 from backend.services.store_confirm import add_challenge_confirm
-from backend.services.stats import update_stats_for_challenge_today
+from backend.services.stats import update_stats_for_challenge_today, init_challenge_members
 import datetime
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from backend.services.stats import challenge_update_stats  # statt update_stats_for_challenge_today
 from collections import defaultdict
+from flask import Response
+
 
 
 
@@ -48,16 +50,15 @@ def _daterange(d0: datetime.date, d1: datetime.date):
         yield cur
         cur = cur + timedelta(days=1)
 
-
 @bp.get("/challenges/list")
 @auth_required
 def list_challenges():
     st = state()
     with_today = (request.args.get("withToday") or "").lower() == "true"
-    tz = int(request.args.get("tzOffsetMinutes", "0"))  # falls spaeter nuetzlich
+    tz = int(request.args.get("tzOffsetMinutes", "0"))  # aktuell ungenutzt
     uid = request.uid
 
-    # alle Challenge-IDs, bei denen der User Mitglied ist
+    # Nur Challenges, bei denen der User in challenge_members steht
     member_ch_ids = {
         m["challengeId"]
         for m in st.get("challenge_members", [])
@@ -66,16 +67,14 @@ def list_challenges():
 
     res = []
     for ch in st.get("challenges", {}).values():
-        # nur Challenges behalten, wo User Mitglied ist (oder Owner, wenn du das willst)
-        if ch.get("id") not in member_ch_ids and ch.get("ownerId") != uid:
+        if ch.get("id") not in member_ch_ids:
             continue
 
         item = dict(ch)
 
         if with_today:
             logs = st.get("challenge_logs", {}).get(str(ch["id"]), [])
-            # Minimal: "done", wenn es irgendeinen Log gibt; sonst "open".
-            # (Wenn du es pro-User willst: any(l.get("userId")==uid for l in logs))
+            # "done" nur, wenn der eingeloggte User heute geloggt hat
             status = "done" if any(l.get("userId") == uid for l in logs) else "open"
             item["today"] = {
                 "status": status,
@@ -117,7 +116,7 @@ def create_challenge():
 # -------- Detail / Members / Activity --------
 
 @bp.get("/challenges/<int:cid>")
-#@auth_required
+@auth_required
 def challenge_detail(cid: int):
     ch = state()["challenges"].get(str(cid))
     if not ch:
@@ -151,7 +150,11 @@ def challenge_activity(cid: int):
             "id": l["id"],
             "action": l["action"],
             "evidence": l.get("evidence"),
-            "timestamp": l.get("timestamp")
+            "timestamp": l.get("timestamp"),
+            "userId": l.get("userId"),
+            "name": l.get("name"),
+            "vorname": l.get("vorname"),
+            "avatar": l.get("avatar"),
         })
     return jsonify(res)
 
@@ -194,36 +197,30 @@ def challenge_confirm(cid: int):
     if not ch:
         return jsonify({"error": "not_found"}), 404
 
-    if not any(m for m in st["challenge_members"] if m["challengeId"] == cid and m["userId"] == uid):
+    # Mitgliedschaft pruefen
+    if not any(m for m in st.get("challenge_members", []) if m.get("challengeId") == cid and m.get("userId") == uid):
         return jsonify({"error": "forbidden"}), 403
 
+    # Body validieren
     try:
         body = ConfirmBody(**(request.get_json(force=True) or {}))
     except ValidationError as e:
         return jsonify({"error": "validation", "details": e.errors()}), 400
 
-    # optionale Konsistenzpruefung
-    if body.user_id is not None and body.user_id != uid:
-        return jsonify({"error": "bad_request", "details": "user_id mismatch"}), 400
-    if body.challenge_id is not None and body.challenge_id != cid:
-        return jsonify({"error": "bad_request", "details": "challenge_id mismatch"}), 400
-
     # Timestamp bestimmen
-    ts = body.timestamp
-    if ts is None:
-        ymd = request.args.get("date")
-        tz = int(request.args.get("tzOffsetMinutes", "0"))
-        if ymd:
-            try:
-                y, m, d = map(int, ymd.split("-"))
-            except Exception:
-                return jsonify({"error": "bad_request", "details": "date must be YYYY-MM-DD"}), 400
-            _, end_ms = day_window_ms_for_local_date(tz, y, m, d)
-            ts = end_ms - 1
-        else:
-            ts = now_ms()
+    ts = body.timestamp or now_ms()
+    tz = int(request.args.get("tzOffsetMinutes", "0"))
 
-    # Log/Confirm anlegen -> inkl. Feed-Eintrag (das macht add_challenge_confirm)
+    # User-Daten auslesen
+    user = st.get("users", {}).get(str(uid), {})
+    user_info = {
+        "userId": uid,
+        "name": user.get("name"),
+        "vorname": user.get("vorname"),
+        "avatar": user.get("avatar"),
+    }
+
+    # Confirm / Log erstellen
     confirm = add_challenge_confirm(
         challenge_id=cid,
         user_id=uid,
@@ -232,17 +229,46 @@ def challenge_confirm(cid: int):
         visibility=body.visibility or "freunde"
     )
     confirm["timestamp"] = int(ts)
-    for c in st["challenge_logs"].get(str(cid), []):
-        if c["id"] == confirm["id"]:
-            c["timestamp"] = int(ts)
+    confirm.update(user_info)
+
+    # In challenge_logs speichern/aktualisieren
+    logs = st.setdefault("challenge_logs", {}).setdefault(str(cid), [])
+    for c in logs:
+        if c.get("id") == confirm.get("id"):
+            c.update(confirm)
             break
+
+    # --------------------------
+    # → Stats direkt aktualisieren
+    # --------------------------
+    stats_all = st.setdefault("challenge_stats", {}).setdefault(str(cid), {})
+    per_user_map = stats_all.setdefault("perUser", {})
+    ustat = per_user_map.setdefault(str(uid), {
+        "userId": uid,
+        "conf_count": 0,
+        "fail_count": 0,
+        "streak": 0,
+        "neg_streak": 0,
+        "lastTodayState": "pending"
+    })
+
+    # Counter hoch
+    ustat["conf_count"] = int(ustat.get("conf_count", 0)) + 1
+    ustat["streak"] = int(ustat.get("streak", 0)) + 1
+    ustat["neg_streak"] = 0
+    ustat["lastTodayState"] = "done"
+
+    # Falls er NICHT pending war (z.B. als fail gewertet), dann failCount korrigieren
+    prev_state = ustat.get("lastTodayState")
+    if prev_state not in ("pending", "not_pending"):
+        ustat["fail_count"] = max(0, int(ustat.get("fail_count", 0)) - 1)
 
     save()
 
-    tz = int(request.args.get("tzOffsetMinutes", "0"))
-    update_stats_for_challenge_today(cid, tz)
-    return jsonify({"ok": True, "confirm": confirm}), 201
+    # Optional trotzdem globales Recalc triggern (falls du willst)
+    challenge_update_stats(cid, tz_offset_minutes=tz)
 
+    return jsonify({"ok": True, "confirm": confirm}), 201
 # -------- Invites --------
 
 @bp.get("/challenges/invites")
@@ -321,14 +347,43 @@ def leave_challenge(cid: int):
     return jsonify({"ok": True})
 
 # -------- Stats / Blocked / Today-Status / Fail-Logs --------
+# routes.py (oder wo dein Blueprint definiert ist)
+
+
 @bp.route("/challenges/<int:cid>/stats/recalc", methods=["POST","GET"])
 def challenge_stats_recalc(cid: int):
+    """
+    Recalc einer einzelnen Challenge.
+    Optional: tzOffsetMinutes
+    """
     tz = int(request.args.get("tzOffsetMinutes", "0"))
-    result = challenge_update_stats(cid, tz_offset_minutes=tz)
-    return jsonify(result)
+    challenge_update_stats(cid, tz_offset_minutes=tz)
+    return Response("recalc ok", mimetype="text/plain", status=200)
 
 
+@bp.route("/challenges/stats/recalc_all", methods=["POST","GET"])
+def challenges_stats_recalc_all():
+    """
+    Recalc fuer alle Challenges mit Teilnehmern.
+    Optional: tzOffsetMinutes
+    """
+    tz = int(request.args.get("tzOffsetMinutes", "0"))
+    st = state()
 
+    challenge_ids = {
+        m.get("challengeId")
+        for m in st.get("challenge_members", [])
+        if m.get("challengeId") is not None
+    }
+
+    for cid in challenge_ids:
+        try:
+            challenge_update_stats(int(cid), tz_offset_minutes=tz)
+        except Exception:
+            # bewusst still weiter
+            pass
+
+    return Response("recalc ok", mimetype="text/plain", status=200)
 
 @bp.get("/challenges/<int:cid>/stats")
 def challenge_stats_users(cid: int):
@@ -339,73 +394,120 @@ def challenge_stats_users(cid: int):
     if not ch:
         return jsonify({"error": "not_found"}), 404
 
-    # Challenge-Metadaten (nur zur Info im Response)
-    start_at = ch.get("startAt")
+    # Challenge-Metadaten fuer Response
     dauer_tage = ch.get("dauerTage") or ch.get("days")
     faellige = ch.get("faelligeWochentage") or []
     erlaubte_fails = ch.get("erlaubteFailsTage")
-    steak = ch.get("streak")  # bleibt "steak", wenn dein iOS das so mapped
 
-    # ---- Stats aus dem Speicher lesen ----
+    # Stats lesen
     stats_all = st.get("challenge_stats", {}).get(str(cid), {})
     per_user_map = stats_all.get("perUser", {})  # { "1": {...}, "2": {...} }
-    today_global = stats_all.get("today") or {"status": "not_pending", "pending": False}
 
-    def map_today_for_user(u: dict) -> dict:
-        """Baut dein gewünschtes Today-Objekt pro User:
-           status:  'offen' | 'gesperrt' | 'Abgeschlossen'
-           pending: Bool
-           erledigt: Bool
-        """
-        blocked = str(u.get("blocked", "none"))
-        last_today = str(u.get("lastTodayState", "nicht_pending"))
+    def norm_challenge_status(val: str | None) -> str:
+        v = (val or "").lower()
+        if v in ("run",):
+            return "run"
+        if v in ("blocked", "gesperrt"):
+            return "blocked"
+        if v in ("done", "completed", "abgeschlossen"):
+            return "done"
+        return "none"
 
-        if blocked == "completed":
-            return {"status": "Abgeschlossen", "pending": False, "erledigt": True}
-        if blocked == "gesperrt":
-            return {"status": "gesperrt", "pending": False, "erledigt": False}
+    # "not_done" soll als "pending" zurueckkommen
+    def norm_today_status(val: str | None) -> str:
+        v = (val or "").lower()
+        if v in ("n_done", "not_done"):
+            return "not_done"
+        if v in ("done", "erledigt", "success"):
+            return "done"
+        if v in ("pending"):
+            return "pending"
+        if v in ("not_pending", "open", "offen"):
+            return "not_pending"
 
-        # offen
-        return {
-            "status": "offen",
-            "pending": last_today == "pending",
-            "erledigt": last_today == "erledigt",
-        }
 
-    # Array aus dem dict bauen (praktisch für iOS)
     per_user = []
-    for uid_str, u in per_user_map.items():
+    for uid_key, u in per_user_map.items():
+        # userId robust bestimmen
         try:
-            uid = int(uid_str)
+            uid = int(uid_key)
         except Exception:
-            # Falls Key bereits int ist (sehr selten), fallback:
-            uid = int(u.get("userId", 0)) if isinstance(uid_str, dict) else 0
+            uid = int(u.get("userId", 0)) if isinstance(u, dict) else 0
+
+        # Zaehlwerte robust lesen (unterstuetzt snake_case und camelCase)
+        conf_count = int(u.get("conf_count", u.get("confCount", 0)) or 0)
+        fail_count = int(u.get("fail_count", u.get("failCount", 0)) or 0)
+        streak     = int(u.get("streak", 0) or 0)
+        neg_streak = int(u.get("neg_streak", u.get("negStreak", 0)) or 0)
+
+        # Challenge-Status normalisieren
+        blocked_raw = u.get("blocked", u.get("challenge_status", "none"))
+        challenge_status = norm_challenge_status(blocked_raw)
+
+        # Heutiger Status NUR aus lastTodayState mappen
+        last_today_raw = u.get("lastTodayState")
+        challenge_today_status = norm_today_status(last_today_raw)
+
+        # Kompatibles "status"-Feld: heutig gespeicherter state (pending/not_pending)
+        status_out = norm_today_status(u.get("statex"))
 
         per_user.append({
             "userId": uid,
-            "confCount": int(u.get("conf_count", 0)),
-            "failCount": int(u.get("fail_count", 0)),
-            "streak": int(u.get("streak", 0)),
-            "negStreak": int(u.get("neg_streak", 0)),
-            "challenge_status": u.get("blocked", "none"),       # "none" | "gesperrt" | "completed"
-            "status": u.get("state", "nicht_pending"),  # Zustand für den nächsten Tag
+            "confCount": conf_count,
+            "failCount": fail_count,
+            "streak": streak,
+            "negStreak": neg_streak,
+            "challenge_status": challenge_status,              # "none" | "run" | "blocked" | "done"
+            "challenge_today_status": challenge_today_status,  # aus lastTodayState gemappt
+            "status": status_out
         })
-
-    # Range grob auffüllen (falls startAt fehlt, lasse es leer)
-    tz = timezone(timedelta(minutes=tz_offset))
-    today_local = datetime.now(tz).date()
-    def _to_local_date_from_ts(ts: int) -> str | None:
-        if not ts:
-            return None
-        if ts > 10**12:  # ms -> s
-            ts = ts // 1000
-        return datetime.fromtimestamp(int(ts), tz).date().isoformat()
 
     resp = {
         "challengeId": cid,
         "dauerTage": dauer_tage,
-        "faelligeWochentage": faellige,
         "erlaubteFailsTage": erlaubte_fails,
+        "faelligeWochentage": faellige,
         "perUser": per_user,
     }
     return jsonify(resp)
+
+
+# -------- Init Challenges --------
+
+
+@bp.post("/challenges/<int:cid>/init")
+def challenge_init(cid: int):
+    """
+    Setzt alle Member der Challenge auf Anfang und stellt heute pending/not_pending korrekt.
+    """
+    tz = int(request.args.get("tzOffsetMinutes", "0"))
+    res = init_challenge_members(cid, tz_offset_minutes=tz)
+    if "error" in res:
+        code = 404 if res["error"] == "challenge_not_found" else 400
+        return jsonify(res), code
+    return jsonify({"status": "initialized", "challengeId": cid})
+
+
+
+@bp.post("/challenges/init_all")
+def challenges_init_all():
+    """
+    Initialisiert alle Challenges, die mind. einen Teilnehmer haben.
+    """
+    tz = int(request.args.get("tzOffsetMinutes", "0"))
+    st = state()
+
+    challenge_ids = {
+        m.get("challengeId")
+        for m in st.get("challenge_members", [])
+        if m.get("challengeId") is not None
+    }
+
+    ok = 0
+    for cid in challenge_ids:
+        res = init_challenge_members(int(cid), tz_offset_minutes=tz)
+        if "error" not in res:
+            ok += 1
+
+    return jsonify({"status": "initialized", "count": ok})
+
