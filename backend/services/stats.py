@@ -22,6 +22,8 @@ def _normalize_weekdays(faellige: List[int | str] | None) -> List[int]:
     Normalisiert Wochentage auf Python-Index (0=Mo ... 6=So).
     Erlaubt Strings und 1..7. 7 wird zu 0 (So->0), falls du 1=Mo ... 7=So benutzt.
     """
+    
+    print("faellige (raw):", faellige)
     if not faellige:
         return []  # leer -> spaeter als 'jeder Tag' interpretiert
     out: List[int] = []
