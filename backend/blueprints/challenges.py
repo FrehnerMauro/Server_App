@@ -101,17 +101,34 @@ def create_challenge():
         "beschreibung": body.beschreibung,
         "ownerId": request.uid,
         "faelligeWochentage": body.faelligeWochentage,
-        "startAt": body.startAt or int(datetime.now().timestamp()),   # 👈 hier
-        "dauerTage": body.dauerTage,                                 # 👈 hier
-        "erlaubteFailsTage": body.erlaubteFailsTage,                 # optional
+        "startAt": body.startAt or int(datetime.now().timestamp()),
+        "dauerTage": body.dauerTage,
+        "erlaubteFailsTage": body.erlaubteFailsTage,
         "hinzugefuegtAt": now_ms()
     }
     st["challenges"][str(cid)] = ch
-    st.setdefault("challenge_members", []).append({"challengeId": cid, "userId": request.uid})
+    st.setdefault("challenge_members", []).append(
+        {"challengeId": cid, "userId": request.uid}
+    )
     st.setdefault("challenge_logs", {})[str(cid)] = []
     st.setdefault("challenge_chat", {})[str(cid)] = []
+
+    # >>> NEU: direkt initialisieren (nur diese Challenge)
+    tz = int(request.args.get("tzOffsetMinutes", "0"))
+    res = init_challenge_members(cid, tz_offset_minutes=tz)
+    if "error" in res:
+        # falls gewuenscht: aufraeumen/rollback; hier geben wir klaren Fehler zurueck
+        return jsonify({"error": "init_failed", "details": res}), 400
+
+    # optional: Stats direkt nachziehen (wenn init das nicht schon macht)
+    try:
+        challenge_update_stats(cid, tz_offset_minutes=tz)
+    except Exception:
+        # nicht fatal; du kannst hier loggen
+        pass
+
     save()
-    return jsonify({"id": cid}), 201
+    return jsonify({"id": cid, "initialized": True}), 201
 
 # -------- Detail / Members / Activity --------
 
