@@ -333,10 +333,28 @@ def accept_invite(rid: int):
     inv = next((i for i in st["challenge_invites"] if i["id"] == rid), None)
     if not inv:
         return jsonify({"error": "not_found"}), 404
+
+    cid = inv["challengeId"]
+    to_uid = inv["toUserId"]
+
+    # Mitglied idempotent hinzufuegen
+    already = any(m for m in st.setdefault("challenge_members", [])
+                  if m.get("challengeId") == cid and m.get("userId") == to_uid)
+    if not already:
+        st["challenge_members"].append({"challengeId": cid, "userId": to_uid})
+
     inv["status"] = "accepted"
-    st["challenge_members"].append({"challengeId": inv["challengeId"], "userId": inv["toUserId"]})
+    save()  # erst speichern, dann init
+
+    # NUR init (kein recalc)
+    tz = int(request.args.get("tzOffsetMinutes", "0"))
+    res = init_challenge_members(cid, tz_offset_minutes=tz)
+    if "error" in res:
+        # optional: hier koenntest du rollbacken; wir geben klaren Fehler zurueck
+        return jsonify({"error": "init_failed", "details": res}), 400
+
     save()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "initialized": True})
 
 @bp.post("/challenges/invites/<int:rid>/decline")
 @auth_required
