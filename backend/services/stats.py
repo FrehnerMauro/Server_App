@@ -71,28 +71,36 @@ def challenge_update_stats(cid: int, tz_offset_minutes: int = 0) -> Dict[str, An
     faellige = _normalize_weekdays(faellige_raw)
 
     tz = timezone(timedelta(minutes=tz_offset_minutes))
-    today_dt = datetime.now(tz)
-    today = today_dt.date()
+    now_dt = datetime.now(tz)
+    today = now_dt.date()
     today_iso = today.isoformat()
+    yesterday = today - timedelta(days=1)
 
     start_date = _to_local_date_from_ts(int(start_at), tz_offset_minutes)
     end_date = start_date + timedelta(days=int(dauer) - 1) if dauer else today
 
+    # Mitglieder der Challenge
     members = [m["userId"] for m in st.get("challenge_members", []) if m.get("challengeId") == cid]
 
+    # Logs -> erledigt GESTERN (lokales Datum)
     logs = st.get("challenge_logs", {}).get(str(cid), [])
-    confirms_today = defaultdict(bool)
+    confirmed_yesterday = defaultdict(bool)
     for l in logs:
         uid = l.get("userId") or l.get("user_id")
         ts = l.get("timestamp")
         if uid is None or ts is None:
             continue
-        if _to_local_date_from_ts(int(ts), tz_offset_minutes) == today:
-            confirms_today[int(uid)] = True
+        log_day = _to_local_date_from_ts(int(ts), tz_offset_minutes)
+        if log_day == yesterday:
+            confirmed_yesterday[int(uid)] = True
 
     stats_all = st.setdefault("challenge_stats", {}).setdefault(str(cid), {})
     per_user = stats_all.setdefault("perUser", {})
     updated_users: Dict[str, Any] = {}
+
+    # Heutige Faelligkeit (fuer Initialisierung)
+    due_today = _is_due_day(today, start_date, end_date, faellige)
+    due_yesterday = _is_due_day(yesterday, start_date, end_date, faellige)
 
     for uid in members:
         key = str(uid)
@@ -102,91 +110,98 @@ def challenge_update_stats(cid: int, tz_offset_minutes: int = 0) -> Dict[str, An
             "streak": 0,
             "neg_streak": 0,
             "blocked": "none",         # "none" | "run" | "gesperrt" | "completed"
-            "state": "pending",        # "pending" | "not_pending"
-            "lastTodayState": "not_done",  # "done" | "not_done" | "not_pending"
-            # optional fuer Idempotenz:
+            # "state": "pending" | "not_pending"   # wird unten gesetzt
+            # "lastTodayState": "done"|"not_done"|"not_pending"   # wird unten gesetzt
             # "lastComputedDate": None
         }
 
         blocked = str(pu.get("blocked", "none"))
 
-        # Heutiger Aktivitaetsstatus (nur HEUTE, nicht morgen!)
-        is_due_today = _is_due_day(today, start_date, end_date, faellige)
-        state_today = "pending" if is_due_today else "not_pending"
+        # Nur aktive User recalc-en
+        if blocked not in ("run",):
+            # auch fuer nicht-aktive den heutigen Anzeige-Status setzen,
+            # aber keine Counter aendern
+            today_state_label = "pending" if due_today else "not_pending"
+            today_obj = {
+                "blocked": blocked,
+                "state": "not_pending" if not due_today else "not_done",
+                "pending": bool(due_today),
+                "done": False,
+            }
+            pu.update({
+                "state": today_state_label,
+                "lastComputedAt": now_ms(),
+                "lastComputedDate": today_iso,
+                "lastTodayState": "not_pending" if not due_yesterday else ("done" if confirmed_yesterday.get(uid) else "not_done"),
+                "today": today_obj,
+            })
+            per_user[key] = pu
+            updated_users[key] = pu
+            continue
 
-        # Heutiger Erledigungsstatus
-        if is_due_today:
-            today_state = "done" if confirms_today.get(uid) else "not_done"
-        else:
-            today_state = "not_pending"
+        # Idempotenz: wenn heute schon gerollt, Zaehler nicht nochmal anpassen
+        if pu.get("lastComputedDate") != today_iso:
+            conf_count = int(pu.get("conf_count", 0))
+            fail_count = int(pu.get("fail_count", 0))
+            streak     = int(pu.get("streak", 0))
+            neg_streak = int(pu.get("neg_streak", 0))
 
-        # Zaehler idempotent nur einmal pro Kalendertag anpassen
-        last_computed_date = pu.get("lastComputedDate")
-        conf_count = int(pu.get("conf_count", 0))
-        fail_count = int(pu.get("fail_count", 0))
-        streak     = int(pu.get("streak", 0))
-        neg_streak = int(pu.get("neg_streak", 0))
-
-        if blocked not in ("completed", "gesperrt"):
-            # sobald aktiv, als 'run' markieren
-            if blocked == "none":
-                blocked = "run"
-
-            if last_computed_date != today_iso:
-                if today_state == "not_done":
-                    fail_count += 1
-                    streak = 0
-                    neg_streak += 1
-                elif today_state == "done":
+            # Auswertung fuer GESTERN
+            if due_yesterday:
+                if confirmed_yesterday.get(uid):
+                    # gestern erledigt -> Streak rauf, Fail 0er Logik
                     conf_count += 1
                     streak += 1
                     neg_streak = 0
-                # not_pending -> keine Aenderung
+                else:
+                    # gestern faellig aber nicht erledigt -> Fail, Streak reset
+                    fail_count += 1
+                    streak = 0
+                    neg_streak += 1
+            # wenn gestern nicht faellig -> keine Aenderung
 
-                # Blockierungs-/Abschlusslogik
-                if erlaubte_fails is not None and fail_count >= int(erlaubte_fails):
-                    blocked = "gesperrt"
-                if dauer is not None and conf_count >= int(dauer):
-                    blocked = "completed"
+            # Sperr-/Abschlusslogik nach Update
+            if erlaubte_fails is not None and fail_count >= int(erlaubte_fails):
+                blocked = "gesperrt"
+            if dauer is not None and conf_count >= int(dauer):
+                blocked = "completed"
 
-        # Today-Objekt (heute)
+            pu.update({
+                "conf_count": conf_count,
+                "fail_count": fail_count,
+                "streak":     streak,
+                "neg_streak": neg_streak,
+                "blocked":    blocked,
+            })
+
+        # Neuen Tag initialisieren (heute)
+        today_state_label = "pending" if due_today else "not_pending"
+        # Heute frisch: nicht erledigt (zurueckgesetzt), pending falls faellig
         today_obj = {
             "blocked": blocked,
-            "state": today_state,                 # "done" | "not_done" | "not_pending"
-            "pending": (today_state == "not_done"),
-            "done": (today_state == "done")
+            "state": "not_pending" if not due_today else "not_done",
+            "pending": bool(due_today),
+            "done": False,
         }
 
-        # Achtung: STATE SPEICHERN WIR JETZT ALS HEUTE (nicht morgen!)
-        next_state = state_today
-
         pu.update({
-            "conf_count": conf_count,
-            "fail_count": fail_count,
-            "streak":     streak,
-            "neg_streak": neg_streak,
-            "blocked":    blocked,
-            "state":      next_state,             # heutig: "pending" | "not_pending"
+            "state": today_state_label,         # heutig: pending/not_pending
             "lastComputedAt": now_ms(),
-            "lastComputedDate": today_iso,        # fuer Idempotenz
-            "lastTodayState": today_state,        # "done" | "not_done" | "not_pending"
+            "lastComputedDate": today_iso,      # idempotent pro Kalendertag
+            "lastTodayState": (
+                "not_pending" if not due_yesterday else ("done" if confirmed_yesterday.get(uid) else "not_done")
+            ),
             "today": today_obj
         })
 
         per_user[key] = pu
         updated_users[key] = pu
 
-    # Aggregierter Tagesstatus (heute)
-    any_due_today = _is_due_day(today, start_date, end_date, faellige)
-    if any_due_today:
+    # Aggregierter Status HEUTE (frisch initialisiert)
+    if due_today:
+        # pending wenn mindestens ein aktiver User heute pending ist und noch niemand done (zu Tagesbeginn immer pending)
         any_pending = any(u.get("today", {}).get("pending") for u in updated_users.values())
-        any_done    = any(u.get("today", {}).get("done") for u in updated_users.values())
-        if any_done and not any_pending:
-            stats_all["today"] = {"status": "done", "pending": False}
-        elif any_pending:
-            stats_all["today"] = {"status": "pending", "pending": True}
-        else:
-            stats_all["today"] = {"status": "not_pending", "pending": False}
+        stats_all["today"] = {"status": "pending" if any_pending else "not_pending", "pending": bool(any_pending)}
     else:
         stats_all["today"] = {"status": "not_pending", "pending": False}
 
