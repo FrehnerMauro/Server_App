@@ -17,6 +17,32 @@ from flask import Response
 
 bp = Blueprint("challenges", __name__)
 
+
+
+def _normalize_weekdays(raw_list):
+    """
+    Normalisiert z. B. ["Mon", "DI", "dienstag"] → [0,1,2,...]
+    Montag=0, Sonntag=6
+    """
+    mapping = {
+        "mo": 0, "mon": 0, "montag": 0,
+        "di": 1, "tue": 1, "dienstag": 1,
+        "mi": 2, "wed": 2, "mittwoch": 2,
+        "do": 3, "thu": 3, "donnerstag": 3,
+        "fr": 4, "fri": 4, "freitag": 4,
+        "sa": 5, "sat": 5, "samstag": 5,
+        "so": 6, "sun": 6, "sonntag": 6
+    }
+    result = []
+    for x in raw_list:
+        if isinstance(x, int) and 0 <= x <= 6:
+            result.append(x)
+        elif isinstance(x, str):
+            k = x.strip().lower()[:3]
+            if k in mapping:
+                result.append(mapping[k])
+    return sorted(set(result))
+
 # -------- List --------
 def _to_local_date_from_ts(ts: int, tz_offset_min: int) -> datetime.date:
     """Akzeptiert Sekunden oder Millisekunden."""
@@ -24,6 +50,16 @@ def _to_local_date_from_ts(ts: int, tz_offset_min: int) -> datetime.date:
         ts = ts // 1000
     tz = timezone(timedelta(minutes=tz_offset_min))
     return datetime.fromtimestamp(int(ts), tz).date()
+
+def _is_due_day(day: datetime.date, start_date: datetime.date, end_date: datetime.date, faellige: list[int]) -> bool:
+    """
+    Prüft, ob ein bestimmter Tag innerhalb der Laufzeit und laut faelligeWochentage fällig ist.
+    """
+    if day < start_date or day > end_date:
+        return False
+    if not faellige:
+        return True
+    return day.weekday() in faellige
 
 def _daterange(d0: datetime.date, d1: datetime.date):
     cur = d0
