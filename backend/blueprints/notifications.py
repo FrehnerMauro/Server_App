@@ -1,6 +1,7 @@
-from flask import Blueprint, jsonify
+# backend/routes/notifications.py
+from flask import Blueprint, jsonify, request
 from backend.common.auth import auth_required
-from backend.common.store import state
+from backend.common.store import state, save
 
 bp = Blueprint("notifications", __name__)
 
@@ -8,21 +9,21 @@ bp = Blueprint("notifications", __name__)
 @auth_required
 def list_notifications():
     st = state()
-    uid = getattr(__import__("flask").request, "uid")
-    res = [n for n in st.get("notifications", []) if n["userId"] == uid]
+    uid = request.uid
+    res = [n for n in st.get("notifications", []) if n.get("userId") == uid]
+    # optional: neueste zuerst
+    res.sort(key=lambda x: x.get("createdAt", 0), reverse=True)
     return jsonify(res)
 
 @bp.post("/notifications/<int:nid>/read")
 @auth_required
 def mark_read(nid: int):
     st = state()
+    uid = request.uid
     for n in st.get("notifications", []):
-        if n["id"] == nid:
+        # nur eigene Notifications lesen/ändern
+        if n.get("id") == nid and n.get("userId") == uid:
             n["read"] = True
-            from common.store import save
             save()
             return jsonify({"ok": True})
     return jsonify({"error": "not_found"}), 404
-
-
-
