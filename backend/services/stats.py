@@ -82,7 +82,7 @@ def challenge_update_stats(cid: int, tz_offset_minutes: int = 0) -> Dict[str, An
     # Mitglieder der Challenge
     members = [m["userId"] for m in st.get("challenge_members", []) if m.get("challengeId") == cid]
 
-    # Logs -> erledigt GESTERN (lokales Datum)
+    # Logs: erledigt gestern?
     logs = st.get("challenge_logs", {}).get(str(cid), [])
     confirmed_yesterday = defaultdict(bool)
     for l in logs:
@@ -98,9 +98,8 @@ def challenge_update_stats(cid: int, tz_offset_minutes: int = 0) -> Dict[str, An
     per_user = stats_all.setdefault("perUser", {})
     updated_users: Dict[str, Any] = {}
 
-    # Faelligkeit gestern/heute
-    due_yesterday = _is_due_day(yesterday, start_date, end_date, faellige)
-    due_today     = _is_due_day(today,     start_date, end_date, faellige)
+    # Heutige Faelligkeit (fuer die neue Tagesinitialisierung)
+    due_today = _is_due_day(today, start_date, end_date, faellige)
 
     for uid in members:
         key = str(uid)
@@ -110,76 +109,83 @@ def challenge_update_stats(cid: int, tz_offset_minutes: int = 0) -> Dict[str, An
             "streak": 0,
             "neg_streak": 0,
             "blocked": "none",
-            # "state": "pending" | "not_pending"
-            # "lastTodayState": "done"|"not_done"|"not_pending"
+            # "state": "pending" | "not_pending"  (Vortag)
+            # "lastTodayState": "done" | "not_done" | "not_pending" (Vortag)
             # "lastComputedDate": None
         }
 
         blocked = str(pu.get("blocked", "none"))
 
-        # NUR aktive User rechnen
+        # NUR aktive User behandeln
         if blocked != "run":
-            # Fuer nicht-aktive: nichts rechnen (auf Wunsch)
-            # Optional: heutigen Anzeigezustand setzen (kommentiert, falls gar nichts gewuenscht)
-            # pu.update({
-            #     "state": "pending" if due_today else "not_pending",
-            #     "today": {
-            #         "blocked": blocked,
-            #         "state": "not_done" if due_today else "not_pending",
-            #         "pending": bool(due_today),
-            #         "done": False,
-            #     },
-            #     "lastComputedAt": now_ms(),
-            #     "lastComputedDate": today_iso,
-            # })
+            # Nichts rechnen, aber trotzdem "heute" sauber initialisieren,
+            # damit UI weiss, was heute ansteht (optional; wenn du wirklich GAR NICHTS willst, diesen Block skippen)
+            today_state_label = "pending" if due_today else "not_pending"
+            pu.update({
+                "state": today_state_label,
+                "today": {
+                    "blocked": blocked,
+                    "state": "not_done" if due_today else "not_pending",
+                    "pending": bool(due_today),
+                    "done": False,
+                },
+                "lastComputedAt": now_ms(),
+                "lastComputedDate": today_iso,
+            })
             per_user[key] = pu
+            updated_users[key] = pu
             continue
 
-        # ---- AUSWERTUNG GESTERN (NUR fail_count-Logik) ----
+        # --- Vortagsbewertung nach deiner Regel ---
+        prev_state = str(pu.get("state", "not_pending"))            # "pending" | "not_pending"
+        prev_last  = str(pu.get("lastTodayState", "not_pending"))   # "done" | "not_done" | "not_pending"
+
         fail_count = int(pu.get("fail_count", 0))
+        streak     = int(pu.get("streak", 0))
+        neg_streak = int(pu.get("neg_streak", 0))
 
-        if due_yesterday:
-            # Gestern war faellig
-            if not confirmed_yesterday.get(uid):
-                # pending & NICHT erledigt -> Fail +1
-                fail_count += 1
-                last_today_state = "not_done"
-            else:
-                # pending & erledigt -> kein conf_count-Update hier; nur State-Doku
-                last_today_state = "done"
-        else:
-            # Gestern war NICHT faellig
-            if confirmed_yesterday.get(uid):
-                # nicht_pending & erledigt -> Fail -1 (falls vorher als Fail lief)
-                fail_count = max(0, fail_count - 1)
-                last_today_state = "done"
-            else:
-                # nicht_pending & nicht erledigt -> keine Aenderung
-                last_today_state = "not_pending"
+        # Deine Kernlogik:
+        # Wenn gestern pending UND nicht erledigt -> Fail +1, Streak 0, NegStreak +1
+        if prev_state == "pending" and prev_last == "not_done":
+            fail_count += 1
+            streak = 0
+            neg_streak += 1
 
-        # Sperr-/Abschlusspruefung (nur Fail-Grenze)
+        # (Optional – wenn du bei "done" die Positivserie fuehren willst, entkommentieren)
+        # elif prev_state == "pending" and prev_last == "done":
+        #     streak += 1
+        #     neg_streak = 0
+
+        # Sperrpruefung nur ueber Fail-Grenze
         if erlaubte_fails is not None and fail_count >= int(erlaubte_fails):
             blocked = "gesperrt"
 
-        # Werte zurueckschreiben
-        pu.update({
-            # conf_count/streak/neg_streak bleiben UNBERUEHRT in diesem Recalc
-            "fail_count": fail_count,
+        # --- Neuen Tag initialisieren ---
+        today_state_label = "pending" if due_today else "not_pending"
+        today_obj = {
             "blocked": blocked,
-            "lastTodayState": last_today_state,
-        })
+            "state": "not_done" if due_today else "not_pending",
+            "pending": bool(due_today),
+            "done": False,
+        }
 
-        # ---- HEUTE initialisieren (neuer Tag) ----
         pu.update({
-            "state": "pending" if due_today else "not_pending",
-            "today": {
-                "blocked": blocked,
-                "state": "not_done" if due_today else "not_pending",
-                "pending": bool(due_today),
-                "done": False,
-            },
+            # KEIN conf_count Update im Recalc!
+            "fail_count": fail_count,
+            "streak":     streak,
+            "neg_streak": neg_streak,
+            "blocked":    blocked,
+
+            "state": today_state_label,          # heutig: pending / not_pending
+            "today": today_obj,
+
+            # Idempotenz / Zeitstempel
             "lastComputedAt": now_ms(),
             "lastComputedDate": today_iso,
+
+            # lastTodayState bewusst NICHT auf "not_done" fuer heute setzen.
+            # Es bleibt der Vortagswert (Dokumentation des Vortages).
+            # Falls du hier explizit resetten willst: "lastTodayState": "not_pending"
         })
 
         per_user[key] = pu
