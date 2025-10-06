@@ -2,26 +2,28 @@
 import json
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 _STATE: Dict[str, Any] = {}
-_SHARDS: Dict[str, str] = {}          # shard_key -> file path
-_DIR: str = "state"                   # basisordner fuer sharded dateien
-_DIR_READY: bool = False
-_DIR_CREATED: bool = False
-_DIRTY: Dict[str, bool] = {}          # shard_key -> dirty flag
 
 # ------------------------------------------------------------
 # Default-Zustand + Migration
 # ------------------------------------------------------------
 
-def now_ms() -> int:
-    return int(time.time() * 1000)
-
 def default_state() -> Dict[str, Any]:
     """
-    Minimal sinnvoller Startzustand fuer das System.
+    Minimal sinnvoller Startzustand für das System.
+    - next_ids: Zähler pro Entität
+    - users/auth: einfache Nutzerverwaltung (Tokens)
+    - challenges + Mitglieder + Logs/Chat
+    - friends / friend_requests
+    - notifications
+    - blocked
+    - challenge_stats: Platz für Tagesstatus etc.
+    - feed_posts: Liste aller Feed-Posts (nur Sichtbarkeit 'freunde' gehört in den Feed)
+    - user_posts: pro Benutzer alle seine Posts (inkl. 'privat' und 'freunde')
     """
+    now = now_ms()
     return {
         "next_ids": {},
 
@@ -36,31 +38,29 @@ def default_state() -> Dict[str, Any]:
         # Challenges
         "challenges": {},                      # "49": {...}
         "challenge_members": [],               # {challengeId, userId}
-        "challenge_logs": {},                  # "49": [ {...}, ... ]
-        "challenge_chat": {},                  # "49": [ {...}, ... ]
-        "challenge_invites": [],               # {id,...}
+        "challenge_logs": {},                  # "49": [ {id, action, evidence{imageUrl,caption}, visibility, timestamp, userId}, ... ]
+        "challenge_chat": {},                  # "49": [ {id, userId, text, createdAt}, ... ]
+        "challenge_invites": [],               # {id, challengeId, fromUserId, toUserId, message, status, createdAt}
         "challenge_stats": {},                 # "49": {"today": {...}, ...}
 
         # Benachrichtigungen
-        "notifications": [],
+        "notifications": [],                   # {id, userId, text, read, createdAt}
 
         # Blockierungen je Challenge (optional)
-        "blocked": {},
+        "blocked": {},                         # "49": [userId,...]
 
-        # Feed & Profil-Posts
-        "feed_posts": [],
-        "user_posts": {},
-
-        # zusaetzlich: per-user verlaufslogs
-        "challenge_user_logs": {},            # "challengeId": {"userId":[...]}
+        # Neu: Feed & Profil-Posts
+        "feed_posts": [],                      # [{id, userId, challengeId, action, evidence{...}, visibility, timestamp, likes:set/list, comments:[...]}]
+        "user_posts": {},                      # "1": [ {id, ... wie oben ...}, ... ]
     }
 
 def _upgrade_state(st: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Migration: sorgt dafuer, dass alle benoetigten Keys existieren.
+    Sorgt dafür, dass auch bei älteren gespeicherten States alle benötigten
+    Schlüssel existieren. Verändert st *in place* und gibt es zurück.
     """
+    # Grundcontainer
     st.setdefault("next_ids", {})
-
     st.setdefault("users", {})
     st.setdefault("auth", {}).setdefault("tokens", {})
 
@@ -77,107 +77,30 @@ def _upgrade_state(st: Dict[str, Any]) -> Dict[str, Any]:
     st.setdefault("notifications", [])
     st.setdefault("blocked", {})
 
+    # Neu: Feed & Profile-Posts
     st.setdefault("feed_posts", [])
     st.setdefault("user_posts", {})
 
-    st.setdefault("challenge_user_logs", {})
+    # Typabsicherung für Strukturen, die Dictionaries pro Challenge erwarten
+    if not isinstance(st.get("challenge_logs"), dict):
+        st["challenge_logs"] = {}
+    if not isinstance(st.get("challenge_chat"), dict):
+        st["challenge_chat"] = {}
+    if not isinstance(st.get("blocked"), dict):
+        st["blocked"] = {}
+    if not isinstance(st.get("challenge_stats"), dict):
+        st["challenge_stats"] = {}
 
-    # Typabsicherung
-    for key, typ in [
-        ("challenge_logs", dict),
-        ("challenge_chat", dict),
-        ("blocked", dict),
-        ("challenge_stats", dict),
-        ("user_posts", dict),
-        ("feed_posts", list),
-        ("friends", list),
-        ("friend_requests", list),
-        ("challenge_members", list),
-        ("challenge_invites", list),
-        ("users", dict),
-        ("auth", dict),
-        ("next_ids", dict),
-        ("notifications", list),
-        ("challenge_user_logs", dict),
-        ("challenges", dict),
-    ]:
-        if not isinstance(st.get(key), typ):
-            st[key] = typ() if typ is not list else []
+    # Typabsicherung für neue Strukturen
+    if not isinstance(st.get("feed_posts"), list):
+        st["feed_posts"] = []
+    if not isinstance(st.get("user_posts"), dict):
+        st["user_posts"] = {}
 
     return st
 
 # ------------------------------------------------------------
-# JSON-Helpers
-# ------------------------------------------------------------
-
-def _prepare_for_json(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return {k: _prepare_for_json(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_prepare_for_json(v) for v in obj]
-    if isinstance(obj, set):
-        return sorted(list(obj))
-    return obj
-
-def _atomic_write(path: str, content: Dict[str, Any]):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(content, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
-
-def _load_json(path: str) -> Optional[Dict[str, Any]]:
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-# ------------------------------------------------------------
-# Sharding-Config
-# ------------------------------------------------------------
-
-def _ensure_dir_ready(data_dir: str):
-    global _DIR, _DIR_READY, _DIR_CREATED
-    if _DIR_READY and _DIR == data_dir:
-        return
-    _DIR = data_dir
-    if not os.path.exists(_DIR):
-        os.makedirs(_DIR, exist_ok=True)
-        _DIR_CREATED = True
-    _DIR_READY = True
-
-def _init_shards():
-    global _SHARDS, _DIRTY
-    # shard key -> filename
-    mapping = {
-        "next_ids": "next_ids.json",
-        "users": "users.json",
-        "auth": "auth.json",
-        "friends": "friends.json",
-        "friend_requests": "friend_requests.json",
-        "challenges": "challenges.json",
-        "challenge_members": "challenge_members.json",
-        "challenge_logs": "challenge_logs.json",
-        "challenge_chat": "challenge_chat.json",
-        "challenge_invites": "challenge_invites.json",
-        "challenge_stats": "challenge_stats.json",
-        "notifications": "notifications.json",
-        "blocked": "blocked.json",
-        "feed_posts": "feed_posts.json",
-        "user_posts": "user_posts.json",
-        "challenge_user_logs": "challenge_user_logs.json",
-    }
-    _SHARDS = {k: os.path.join(_DIR, fname) for k, fname in mapping.items()}
-    _DIRTY = {k: False for k in mapping.keys()}
-
-def _mark_dirty(shard_key: str):
-    if shard_key in _DIRTY:
-        _DIRTY[shard_key] = True
-
-# ------------------------------------------------------------
-# Oeffentliche State-API (kompatibel)
+# Öffentliche State-API
 # ------------------------------------------------------------
 
 def state() -> Dict[str, Any]:
@@ -186,8 +109,8 @@ def state() -> Dict[str, Any]:
 
 def load(path: str = "state.json"):
     """
-    Legacy-Loader: eine einzige Datei. Migriert in Memory, speichert dann wieder
-    in dieser Einzeldatei. (Rueckwaerts kompatibel)
+    Lädt den Zustand von Platte oder legt einen Default an.
+    Führt anschließend eine Migration (_upgrade_state) durch, damit alle Keys existieren.
     """
     global _STATE
     if os.path.exists(path):
@@ -195,6 +118,7 @@ def load(path: str = "state.json"):
             try:
                 _STATE = json.load(f)
             except Exception:
+                # Fallback: kaputte Datei -> neu initialisieren, aber alte Datei sichern
                 try:
                     os.rename(path, path + ".broken")
                 except Exception:
@@ -206,197 +130,45 @@ def load(path: str = "state.json"):
         save(path)
 
     _upgrade_state(_STATE)
+    # Optional: sofortige Persistenz nach Migration
     save(path)
 
 def save(path: str = "state.json"):
-    """
-    Legacy-Save: eine einzige Datei.
-    """
     global _STATE
+    # sets in feed_posts (likes) ggf. in Listen serialisieren
     serializable = _prepare_for_json(_STATE)
-    _atomic_write(path, serializable)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(serializable, f, ensure_ascii=False, indent=2)
 
-# ------------------------------------------------------------
-# Sharded Laden / Speichern
-# ------------------------------------------------------------
-
-def load_sharded(data_dir: str = "state", fallback_legacy_path: str = "state.json"):
-    """
-    Laedt aus mehreren Dateien in data_dir. Falls keine Shards existieren,
-    aber eine alte state.json vorhanden ist, wird diese migriert und
-    als Shards gespeichert.
-    """
-    global _STATE
-    _ensure_dir_ready(data_dir)
-    _init_shards()
-
-    # Pruefen, ob bereits Shards existieren
-    any_shard_exists = any(os.path.exists(p) for p in _SHARDS.values())
-
-    if not any_shard_exists and os.path.exists(fallback_legacy_path):
-        # Legacy laden und in Shards verteilen
-        load(fallback_legacy_path)
-        _upgrade_state(_STATE)
-        save_all_shards_from_state()
-        return
-
-    # Falls keine Shards und keine Legacy: frisch initialisieren
-    if not any_shard_exists:
-        _STATE = default_state()
-        save_all_shards_from_state()
-        return
-
-    # Shards laden: fehlende werden mit Defaults ergänzt
-    base = default_state()
-    loaded: Dict[str, Any] = {}
-    for key, path in _SHARDS.items():
-        data = _load_json(path)
-        loaded[key] = data if data is not None else base.get(key)
-
-    # einen zusammengesetzten STATE bauen
-    _STATE = {
-        "next_ids": loaded.get("next_ids") or {},
-        "users": loaded.get("users") or {},
-        "auth": loaded.get("auth") or {"tokens": {}},
-        "friends": loaded.get("friends") or [],
-        "friend_requests": loaded.get("friend_requests") or [],
-        "challenges": loaded.get("challenges") or {},
-        "challenge_members": loaded.get("challenge_members") or [],
-        "challenge_logs": loaded.get("challenge_logs") or {},
-        "challenge_chat": loaded.get("challenge_chat") or {},
-        "challenge_invites": loaded.get("challenge_invites") or [],
-        "challenge_stats": loaded.get("challenge_stats") or {},
-        "notifications": loaded.get("notifications") or [],
-        "blocked": loaded.get("blocked") or {},
-        "feed_posts": loaded.get("feed_posts") or [],
-        "user_posts": loaded.get("user_posts") or {},
-        "challenge_user_logs": loaded.get("challenge_user_logs") or {},
-    }
-
-    _upgrade_state(_STATE)
-
-def save_all_shards_from_state():
-    """
-    Schreibt alle Shards (unabhaengig von Dirty-Flags).
-    """
-    _ensure_dir_ready(_DIR)
-    _init_shards()
-    for shard_key, path in _SHARDS.items():
-        content = _prepare_for_json(_STATE.get(shard_key))
-        if content is None:
-            # falls Key fehlt, speichere leere Struktur aus default_state
-            content = default_state().get(shard_key)
-        _atomic_write(path, content)
-        _DIRTY[shard_key] = False
-
-def save_shard(shard_key: str):
-    """
-    Schreibt einen einzelnen Shard. Setzt Dirty-Flag zurueck.
-    """
-    if shard_key not in _SHARDS:
-        raise KeyError(f"Unbekannter Shard: {shard_key}")
-    path = _SHARDS[shard_key]
-    content = _prepare_for_json(_STATE.get(shard_key))
-    if content is None:
-        content = default_state().get(shard_key)
-    _atomic_write(path, content)
-    _DIRTY[shard_key] = False
-
-def save_all_dirty():
-    """
-    Schreibt nur die Shards, deren Dirty-Flag gesetzt ist.
-    """
-    for k, is_dirty in _DIRTY.items():
-        if is_dirty:
-            save_shard(k)
-
-# ------------------------------------------------------------
-# Counter / IDs
-# ------------------------------------------------------------
+def now_ms() -> int:
+    return int(time.time() * 1000)
 
 def next_id(st: Dict[str, Any], key: str) -> int:
+    """
+    Erhöht einen nummerischen Zähler-Namespace (z. B. 'challenge_id', 'log_id', 'feed_post_id' ...).
+    """
     n = st["next_ids"].get(key, 1)
     st["next_ids"][key] = n + 1
-    _mark_dirty("next_ids")
     return n
 
 # ------------------------------------------------------------
-# Convenience: Mutations mit Dirty-Marking
+# JSON-Helfer (für persistierbare Strukturen)
 # ------------------------------------------------------------
 
-def set_user(user_id: int, obj: Dict[str, Any]):
-    st = state()
-    st["users"][str(user_id)] = obj
-    _mark_dirty("users")
+def _prepare_for_json(obj: Any) -> Any:
+    """
+    Konvertiert Strukturen so, dass sie JSON-serialisierbar sind.
+    - sets -> lists
+    - rekursiv für dicts/lists
+    """
+    if isinstance(obj, dict):
+        return {k: _prepare_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_prepare_for_json(v) for v in obj]
+    if isinstance(obj, set):
+        return sorted(list(obj))
+    return obj
 
-def add_friendship(entry: Dict[str, Any]):
-    st = state()
-    st["friends"].append(entry)
-    _mark_dirty("friends")
-
-def add_friend_request(entry: Dict[str, Any]):
-    st = state()
-    st["friend_requests"].append(entry)
-    _mark_dirty("friend_requests")
-
-def set_challenge(cid: int, obj: Dict[str, Any]):
-    st = state()
-    st["challenges"][str(cid)] = obj
-    _mark_dirty("challenges")
-
-def add_challenge_member(cid: int, uid: int):
-    st = state()
-    st["challenge_members"].append({"challengeId": cid, "userId": uid})
-    _mark_dirty("challenge_members")
-
-def append_challenge_log(cid: int, entry: Dict[str, Any]):
-    st = state()
-    st.setdefault("challenge_logs", {}).setdefault(str(cid), []).append(entry)
-    _mark_dirty("challenge_logs")
-
-def set_challenge_logs(cid: int, lst):
-    st = state()
-    st.setdefault("challenge_logs", {})[str(cid)] = lst
-    _mark_dirty("challenge_logs")
-
-def append_challenge_chat(cid: int, entry: Dict[str, Any]):
-    st = state()
-    st.setdefault("challenge_chat", {}).setdefault(str(cid), []).append(entry)
-    _mark_dirty("challenge_chat")
-
-def set_challenge_stats(cid: int, obj: Dict[str, Any]):
-    st = state()
-    st.setdefault("challenge_stats", {})[str(cid)] = obj
-    _mark_dirty("challenge_stats")
-
-def add_notification(entry: Dict[str, Any]):
-    st = state()
-    st["notifications"].append(entry)
-    _mark_dirty("notifications")
-
-def set_blocked_list(cid: int, lst):
-    st = state()
-    st.setdefault("blocked", {})[str(cid)] = lst
-    _mark_dirty("blocked")
-
-def add_feed_post(entry: Dict[str, Any]):
-    st = state()
-    st["feed_posts"].append(entry)
-    _mark_dirty("feed_posts")
-
-def add_user_post(uid: int, entry: Dict[str, Any]):
-    st = state()
-    st.setdefault("user_posts", {}).setdefault(str(uid), []).append(entry)
-    _mark_dirty("user_posts")
-
-def set_auth_token(token: str, user_id: int):
-    st = state()
-    st.setdefault("auth", {}).setdefault("tokens", {})[token] = user_id
-    _mark_dirty("auth")
-
-# ------------------------------------------------------------
-# Vorhandener Helper (angepasst: dirty-marking + shard-save)
-# ------------------------------------------------------------
 
 def add_challenge_user_log(challenge_id: int,
                            member_id: int,
@@ -404,8 +176,11 @@ def add_challenge_user_log(challenge_id: int,
                            fail_count: int,
                            streak: int,
                            blocked: bool,
-                           state_value: str,
-                           ts: Optional[int] = None) -> dict:
+                           state: str,
+                           ts: int | None = None) -> dict:
+    """
+    Speichert einen User-Log-Eintrag für eine Challenge.
+    """
     st = state()
     logs_for_challenge = st.setdefault("challenge_user_logs", {})
     logs_for_user = logs_for_challenge.setdefault(str(challenge_id), {}).setdefault(str(member_id), [])
@@ -418,10 +193,10 @@ def add_challenge_user_log(challenge_id: int,
         "fail_count": fail_count,
         "streak": streak,
         "blocked": blocked,
-        "state": state_value,
+        "state": state,
         "timestamp": ts or now_ms()
     }
 
     logs_for_user.append(entry)
-    _mark_dirty("challenge_user_logs")
+    save()
     return entry
