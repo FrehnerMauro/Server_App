@@ -23,3 +23,6 @@ def mark_read(nid: int):
             save()
             return jsonify({"ok": True})
     return jsonify({"error": "not_found"}), 404
+
+
+
