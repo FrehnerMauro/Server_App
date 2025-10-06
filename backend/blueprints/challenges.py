@@ -120,12 +120,7 @@ def create_challenge():
         # falls gewuenscht: aufraeumen/rollback; hier geben wir klaren Fehler zurueck
         return jsonify({"error": "init_failed", "details": res}), 400
 
-    # optional: Stats direkt nachziehen (wenn init das nicht schon macht)
-    try:
-        challenge_update_stats(cid, tz_offset_minutes=tz)
-    except Exception:
-        # nicht fatal; du kannst hier loggen
-        pass
+
 
     save()
     return jsonify({"id": cid, "initialized": True}), 201
