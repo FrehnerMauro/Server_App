@@ -223,8 +223,19 @@ def challenge_confirm(cid: int):
     # Timestamp + TZ
     ts = body.timestamp or now_ms()
     tz = int(request.args.get("tzOffsetMinutes", "0"))
-    local_day = _to_local_date_from_ts(int(ts), tz)  # <-- lokales Datum des Posts
-    today_local = datetime.now(timezone(timedelta(minutes=tz))).date()
+    tzinfo = timezone(timedelta(minutes=tz))
+    local_day = _to_local_date_from_ts(int(ts), tz)
+    today_local = datetime.now(tzinfo).date()
+
+    # Challenge-Metadaten fuer "faellig heute?"
+    start_at = ch.get("startAt")
+    dauer    = ch.get("dauerTage") or ch.get("days")
+    faellige = _normalize_weekdays(ch.get("faelligeWochentage") or [])
+    start_date = _to_local_date_from_ts(int(start_at), tz) if start_at else today_local
+    end_date = start_date + timedelta(days=int(dauer) - 1) if dauer else today_local
+
+    # Ist HEUTE (lokal) faellig?
+    due_today = _is_due_day(today_local, start_date, end_date, faellige)
 
     # User-Daten
     user = st.get("users", {}).get(str(uid), {})
@@ -248,16 +259,14 @@ def challenge_confirm(cid: int):
 
     # In challenge_logs: update ODER append
     logs = st.setdefault("challenge_logs", {}).setdefault(str(cid), [])
-    found = False
-    for c in logs:
+    for i, c in enumerate(logs):
         if c.get("id") == confirm.get("id"):
-            c.update(confirm)
-            found = True
+            logs[i] = {**c, **confirm}
             break
-    if not found:
+    else:
         logs.append(confirm)
 
-    # Stats direkt aktualisieren (nur Today/Realtime)
+    # Stats realtime aktualisieren
     stats_all = st.setdefault("challenge_stats", {}).setdefault(str(cid), {})
     per_user_map = stats_all.setdefault("perUser", {})
     ustat = per_user_map.setdefault(str(uid), {
@@ -266,49 +275,51 @@ def challenge_confirm(cid: int):
         "fail_count": 0,
         "streak": 0,
         "neg_streak": 0,
-        "blocked": "run",          # default: aktiv
-        "state": "pending",        # heutig: pending/not_pending
+        "blocked": "run",
+        "state": "pending",
         "lastTodayState": "not_done",
         "lastComputedDate": None
     })
 
-    # WICHTIG: prev_state VOR Update sichern
-    prev_state = ustat.get("lastTodayState")
+    prev_last = ustat.get("lastTodayState")
 
-    # Nur wenn der Post zum HEUTIGEN lokalen Datum gehoert → Today auf "done"
     if local_day == today_local:
-        # Streak/Counter in Echtzeit nur erhoehen, wenn du das willst:
-        # (Mitternachts-Recalc rechnet GESTERN; heute kann man in Echtzeit hochzaehlen)
-        ustat["conf_count"] = int(ustat.get("conf_count", 0)) + 1
-        ustat["streak"] = int(ustat.get("streak", 0)) + 1
-        ustat["neg_streak"] = 0
+        if due_today:
+            # Heutiger faelliger Tag: normales "done" zaehlen
+            ustat["conf_count"] = int(ustat.get("conf_count", 0)) + 1
+            ustat["streak"] = int(ustat.get("streak", 0)) + 1
+            ustat["neg_streak"] = 0
+            # Falls zuvor heute als "not_done" gezaehlt wurde, Fail wieder abziehen
+            if prev_last == "not_done":
+                ustat["fail_count"] = max(0, int(ustat.get("fail_count", 0)) - 1)
 
-        # Falls er zuvor als "not_done" fuer heute gezaehlt wurde und du fail_count schon erhoeht hattest,
-        # kannst du hier korrigieren. Dazu braucht man aber eine Logik, die weiss, ob heute bereits als Fail
-        # gezaehlt wurde. Wenn du das machst, nutze prev_state:
-        if prev_state == "not_done":
-            ustat["fail_count"] = max(0, int(ustat.get("fail_count", 0)) - 1)
+            ustat["lastTodayState"] = "done"
+            ustat["state"] = "pending"
+            ustat["today"] = {
+                "blocked": ustat.get("blocked", "run"),
+                "state": "done",
+                "pending": False,
+                "done": True
+            }
+        else:
+            # Heutiger Tag NICHT faellig → Extra-Live: fail_count - 1
+            ustat["fail_count"] = int(ustat.get("fail_count", 0)) - 1
+            # Streaks NICHT anfassen (kein faelliger Tag)
+            ustat["lastTodayState"] = "done"  # markiere als erledigt (freiwillig)
+            ustat["state"] = "not_pending"
+            ustat["today"] = {
+                "blocked": ustat.get("blocked", "run"),
+                "state": "not_pending",
+                "pending": False,
+                "done": True
+            }
 
-        # Today-Flags setzen
-        ustat["lastTodayState"] = "done"
-        ustat["state"] = "pending"  # heutig (faellig) bleibt „pending“ als Tagesart
-        ustat["today"] = {
-            "blocked": ustat.get("blocked", "run"),
-            "state": "done",
-            "pending": False,
-            "done": True
-        }
-    else:
-        # Post zaehlt nicht fuer heute → Today nicht anfassen
-        pass
-
+    # Andernfalls (Post fuer anderen Tag) nichts an "today" aendern
     ustat["lastComputedAt"] = now_ms()
     per_user_map[str(uid)] = ustat
     save()
 
-    # WICHTIG: kein Full-Recalc hier, sonst ueberschreibst du gerade gesetztes Today/lastTodayState
-    # challenge_update_stats(cid, tz_offset_minutes=tz)
-
+    # Kein Full-Recalc hier
     return jsonify({"ok": True, "confirm": confirm}), 201
 
 @bp.get("/challenges/invites")
