@@ -215,7 +215,8 @@ def challenge_confirm(cid: int):
         return jsonify({"error": "not_found"}), 404
 
     # Mitgliedschaft pruefen
-    if not any(m for m in st.get("challenge_members", []) if m.get("challengeId") == cid and m.get("userId") == uid):
+    if not any(m for m in st.get("challenge_members", [])
+               if m.get("challengeId") == cid and m.get("userId") == uid):
         return jsonify({"error": "forbidden"}), 403
 
     # Body validieren
@@ -224,11 +225,13 @@ def challenge_confirm(cid: int):
     except ValidationError as e:
         return jsonify({"error": "validation", "details": e.errors()}), 400
 
-    # Timestamp bestimmen
+    # Timestamp + TZ
     ts = body.timestamp or now_ms()
     tz = int(request.args.get("tzOffsetMinutes", "0"))
+    local_day = _to_local_date_from_ts(int(ts), tz)  # <-- lokales Datum des Posts
+    today_local = datetime.now(timezone(timedelta(minutes=tz))).date()
 
-    # User-Daten auslesen
+    # User-Daten
     user = st.get("users", {}).get(str(uid), {})
     user_info = {
         "userId": uid,
@@ -248,16 +251,18 @@ def challenge_confirm(cid: int):
     confirm["timestamp"] = int(ts)
     confirm.update(user_info)
 
-    # In challenge_logs speichern/aktualisieren
+    # In challenge_logs: update ODER append
     logs = st.setdefault("challenge_logs", {}).setdefault(str(cid), [])
+    found = False
     for c in logs:
         if c.get("id") == confirm.get("id"):
             c.update(confirm)
+            found = True
             break
+    if not found:
+        logs.append(confirm)
 
-    # --------------------------
-    # → Stats direkt aktualisieren
-    # --------------------------
+    # Stats direkt aktualisieren (nur Today/Realtime)
     stats_all = st.setdefault("challenge_stats", {}).setdefault(str(cid), {})
     per_user_map = stats_all.setdefault("perUser", {})
     ustat = per_user_map.setdefault(str(uid), {
@@ -266,27 +271,50 @@ def challenge_confirm(cid: int):
         "fail_count": 0,
         "streak": 0,
         "neg_streak": 0,
-        "lastTodayState": "pending"
+        "blocked": "run",          # default: aktiv
+        "state": "pending",        # heutig: pending/not_pending
+        "lastTodayState": "not_done",
+        "lastComputedDate": None
     })
 
-    # Counter hoch
-    ustat["conf_count"] = int(ustat.get("conf_count", 0)) + 1
-    ustat["streak"] = int(ustat.get("streak", 0)) + 1
-    ustat["neg_streak"] = 0
-    ustat["lastTodayState"] = "done"
-
-    # Falls er NICHT pending war (z.B. als fail gewertet), dann failCount korrigieren
+    # WICHTIG: prev_state VOR Update sichern
     prev_state = ustat.get("lastTodayState")
-    if prev_state not in ("pending", "not_pending"):
-        ustat["fail_count"] = max(0, int(ustat.get("fail_count", 0)) - 1)
 
+    # Nur wenn der Post zum HEUTIGEN lokalen Datum gehoert → Today auf "done"
+    if local_day == today_local:
+        # Streak/Counter in Echtzeit nur erhoehen, wenn du das willst:
+        # (Mitternachts-Recalc rechnet GESTERN; heute kann man in Echtzeit hochzaehlen)
+        ustat["conf_count"] = int(ustat.get("conf_count", 0)) + 1
+        ustat["streak"] = int(ustat.get("streak", 0)) + 1
+        ustat["neg_streak"] = 0
+
+        # Falls er zuvor als "not_done" fuer heute gezaehlt wurde und du fail_count schon erhoeht hattest,
+        # kannst du hier korrigieren. Dazu braucht man aber eine Logik, die weiss, ob heute bereits als Fail
+        # gezaehlt wurde. Wenn du das machst, nutze prev_state:
+        if prev_state == "not_done":
+            ustat["fail_count"] = max(0, int(ustat.get("fail_count", 0)) - 1)
+
+        # Today-Flags setzen
+        ustat["lastTodayState"] = "done"
+        ustat["state"] = "pending"  # heutig (faellig) bleibt „pending“ als Tagesart
+        ustat["today"] = {
+            "blocked": ustat.get("blocked", "run"),
+            "state": "done",
+            "pending": False,
+            "done": True
+        }
+    else:
+        # Post zaehlt nicht fuer heute → Today nicht anfassen
+        pass
+
+    ustat["lastComputedAt"] = now_ms()
+    per_user_map[str(uid)] = ustat
     save()
 
-    # Optional trotzdem globales Recalc triggern (falls du willst)
-    challenge_update_stats(cid, tz_offset_minutes=tz)
+    # WICHTIG: kein Full-Recalc hier, sonst ueberschreibst du gerade gesetztes Today/lastTodayState
+    # challenge_update_stats(cid, tz_offset_minutes=tz)
 
     return jsonify({"ok": True, "confirm": confirm}), 201
-# -------- Invites --------
 
 @bp.get("/challenges/invites")
 @auth_required
