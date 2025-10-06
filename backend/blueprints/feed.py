@@ -60,40 +60,6 @@ def _augment(post: dict, uid: int) -> dict:
     out["likedByMe"] = uid in likes
     return out
 
-def _display_name(uid: int) -> str:
-    """Zeigt hübschen Namen für einen User."""
-    st = state()
-    u = st.get("users", {}).get(str(uid)) or {}
-    vor = (u.get("vorname") or "").strip()
-    nam = (u.get("name") or "").strip()
-    full = " ".join([p for p in [vor, nam] if p])
-    return full if full else (nam if nam else f"User {uid}")
-
-def _notify_post_owner(post: dict, actor_uid: int, text: str, kind: str):
-    """
-    Benachrichtigt den Besitzer des Posts (falls != actor) mit einem simplen Text.
-    kind: "feed_comment" | "feed_like"
-    """
-    st = state()
-    owner_uid = int(post.get("userId"))
-    if owner_uid == actor_uid:
-        return
-    notif = {
-        "id": next_id(st, "notification_id"),
-        "userId": owner_uid,
-        "text": text,                # z. B. "Max Mustermann hat deinen Beitrag kommentiert"
-        "read": False,
-        "createdAt": now_ms(),
-        "type": kind,
-        "postId": int(post.get("id") or 0),
-    }
-    # Optional: Falls der Post aus einer Challenge stammt, mitgeben (falls vorhanden)
-    if "challengeId" in post and post.get("challengeId") is not None:
-        notif["challengeId"] = int(post["challengeId"])
-
-    st.setdefault("notifications", []).append(notif)
-    save()
-
 # ---------------------------
 # Feed: Liste & Einzelpost
 # ---------------------------
@@ -166,16 +132,6 @@ def like_post(pid: int):
     if uid not in p["likes"]:
         p["likes"].append(uid)
         save()
-
-        # 🔔 Benachrichtigung an den Besitzer
-        actor_name = _display_name(uid)
-        _notify_post_owner(
-            p,
-            actor_uid=uid,
-            text=f"{actor_name} hat deinen Beitrag geliked",
-            kind="feed_like",
-        )
-
     return jsonify({"ok": True, "likesCount": len(p["likes"]), "likedByMe": True})
 
 @bp.post("/feed/<int:pid>/unlike")
@@ -267,16 +223,6 @@ def add_comment(pid: int):
     }
     p["comments"].append(com)
     save()
-
-    # 🔔 Benachrichtigung an den Besitzer
-    actor_name = _display_name(uid)
-    _notify_post_owner(
-        p,
-        actor_uid=uid,
-        text=f"{actor_name} hat deinen Beitrag kommentiert",
-        kind="feed_comment",
-    )
-
     return jsonify(com), 201
 
 @bp.delete("/feed/<int:pid>/comments/<int:cid>")
