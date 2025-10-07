@@ -134,7 +134,7 @@ def challenge_update_stats(cid: int, tz_offset_minutes: int = 0) -> Dict[str, An
             neg_streak += 1
 
         # Sperrpruefung
-        if erlaubte_fails is not None and fail_count >= int(erlaubte_fails):
+        if erlaubte_fails is not None and fail_count > int(erlaubte_fails):
             blocked = "gesperrt"
 
         # Morgen initialisieren (entscheidend sind die faelligen Wochentage)
