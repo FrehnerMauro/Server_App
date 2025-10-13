@@ -19,9 +19,7 @@ def create_app():
     # Ollama lokal auf dem gleichen iMac
     app.config["OLLAMA_BASE_URL"] = "http://localhost:11434"
 
-    @app.get("/")
-    def root():
-        return {"ok": True, "service": "social-habit-backend"}
+
 
     return app
 
