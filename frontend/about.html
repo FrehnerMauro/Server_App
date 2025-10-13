@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Titel – Über uns</title>
+  <meta name="description" content="Ueber uns, Werte, Skills und Kontakt." />
+  <link rel="icon" href="assets/favicon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Seiten-spezifische Styles (ab-*) -->
+  <style>
+    :root { --ab-border:#e2e8f0; --ab-muted:#475569; --ab-grad-a:#4f46e5; --ab-grad-b:#22d3ee; }
+
+    /* Hero */
+    .ab-hero{padding:72px 0 44px;background:
+      radial-gradient(900px 520px at 85% -20%, rgba(79,70,229,.14), transparent 60%),
+      radial-gradient(760px 420px at -10% -10%, rgba(34,211,238,.14), transparent 60%),
+      linear-gradient(180deg,#fff,#f8fafc);}
+    .ab-wrap{display:grid;gap:24px;grid-template-columns:1fr}
+    @media(min-width:980px){.ab-wrap{grid-template-columns:1.2fr .8fr}}
+    .ab-kicker{display:inline-flex;gap:8px;align-items:center;padding:6px 10px;border-radius:999px;background:#eef2ff;color:#3730a3;font-weight:600;font-size:.88rem}
+    .ab-title{font-size:42px;line-height:1.1;margin:12px 0 10px}
+    .ab-sub{color:var(--ab-muted)}
+
+    /* Profilkarte */
+    .ab-card{background:#fff;border:1px solid var(--ab-border);border-radius:16px;box-shadow:0 10px 30px rgba(2,8,23,.08);padding:18px}
+    .ab-profile{display:flex;gap:14px;align-items:center}
+    .ab-photo{width:88px;height:88px;border-radius:14px;object-fit:cover;background:#e5e7eb;border:1px solid var(--ab-border)}
+    .ab-meta{font-size:.95rem;color:var(--ab-muted)}
+
+    /* Werte & Skills */
+    .ab-section{padding:48px 0}
+    .ab-grid{display:grid;gap:16px;grid-template-columns:1fr}
+    @media(min-width:900px){.ab-grid{grid-template-columns:1fr 1fr}}
+    .ab-panel{background:#fff;border:1px solid var(--ab-border);border-radius:16px;box-shadow:0 10px 30px rgba(2,8,23,.06);padding:20px}
+    .ab-panel h3{margin:0 0 10px}
+    .ab-values{display:grid;gap:10px}
+    .ab-value{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--ab-border);border-radius:12px;background:#fff;padding:10px 12px}
+    .ab-icon{width:18px;height:18px;flex:0 0 auto}
+    .ab-tags{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 0;padding:0}
+    .ab-tags li{list-style:none;background:#fff;border:1px solid var(--ab-border);border-radius:999px;padding:6px 10px;font-size:.9rem}
+
+    /* Kontaktbereich */
+    .ab-contact{padding:48px 0;background:#f3f6fb}
+    .ab-contact-grid{display:grid;gap:16px;grid-template-columns:1fr}
+    @media(min-width:980px){.ab-contact-grid{grid-template-columns:1.1fr .9fr}}
+    .ab-form{display:grid;gap:10px;background:#fff;border:1px solid var(--ab-border);border-radius:16px;box-shadow:0 10px 30px rgba(2,8,23,.06);padding:20px}
+    .ab-form input,.ab-form textarea{width:100%;padding:10px 12px;border-radius:12px;border:1px solid #cbd5e1;font:inherit}
+    .ab-cta{background:#fff;border:1px solid var(--ab-border);border-radius:16px;box-shadow:0 10px 30px rgba(2,8,23,.06);padding:20px}
+    .ab-links{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+    .ab-btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:12px;border:1px solid var(--ab-border);text-decoration:none;box-shadow:0 8px 24px rgba(2,8,23,.06)}
+    .ab-btn-primary{background:linear-gradient(90deg,var(--ab-grad-a),var(--ab-grad-b));color:#fff;border-color:transparent}
+
+    .muted{color:var(--ab-muted)}
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="container">
+      <a href="index.html" class="brand">Titel</a>
+      <nav class="nav">
+        <a href="index.html">Start</a>
+        <a href="about.html" class="active">Über uns</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <section class="ab-hero">
+    <div class="container ab-wrap">
+      <div>
+        <span class="ab-kicker">Wer wir sind</span>
+        <h1 class="ab-title">Über uns</h1>
+        <p class="ab-sub">Social Habits ist ein unabhängiges Projekt, das aus der Idee entstanden ist, kleine digitale Werkzeuge zu schaffen, die Menschen motivieren, verbinden und im Alltag unterstützen.
+Hier geht es nicht um Masse oder Hype – sondern um Sinn, Einfachheit und Freude am Machen.
+
+Hinter dem Projekt steht eine Person, die Technik liebt und glaubt, dass gute Software ruhig, klar und hilfreich sein darf.
+Jede App soll ein Stück Leichtigkeit bringen – für Gewohnheiten, Motivation oder einfach ein gutes Gefühl, dranzubleiben.</p>
+      </div>
+
+      <!-- Profil rechts -->
+      <aside class="ab-card" aria-label="Profil">
+        <div class="ab-profile">
+          <img class="ab-photo" src="assets/pers.jpg" alt="Mauro Portrait">
+          <div>
+            <strong>Mauro</strong><br/>
+            <span class="ab-meta">Entwickler • Ingenieur • Student</span><br/>
+            <a href="mailto:maurofrehner@gmail.com">maurofrehner@gmail.com</a>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- Werte & Skills -->
+  <section class="ab-section">
+    <div class="container ab-grid">
+      <!-- Werte -->
+      <div class="ab-panel">
+        <h3>Werte</h3>
+        <div class="ab-values">
+          <div class="ab-value">
+            <svg class="ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+            <div><strong>Klarheit</strong><br/><span class="muted">Einfach erklaert, sauber umgesetzt.</span></div>
+          </div>
+          <div class="ab-value">
+            <svg class="ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 7h18M3 12h18M3 17h18"/></svg>
+            <div><strong>Fokus</strong><br/><span class="muted">Das Wichtige zuerst – kein Ballast.</span></div>
+          </div>
+          <div class="ab-value">
+            <svg class="ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 4v5c0 5-3.5 9-7 9s-7-4-7-9V7l7-4z"/></svg>
+            <div><strong>Stabilitaet</strong><br/><span class="muted">Zuverlaessig, testbar, wartbar.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Skills -->
+      <div class="ab-panel">
+        <h3>Skills</h3>
+        <ul class="ab-tags">
+          <li>JavaScript/TypeScript</li>
+          <li>React / Web</li>
+          <li>Mobile</li>
+          <li>UX & Performance</li>
+          <li>CI/CD</li>
+          <li>Cloud</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Kontakt -->
+  <section class="ab-contact" id="kontakt">
+    <div class="container ab-contact-grid">
+      <!-- Formular (Netlify) -->
+      <div>
+        <h2>Kontakt</h2>
+        <form name="kontakt" method="POST" data-netlify="true" netlify-honeypot="bot-field" class="ab-form">
+          <input type="hidden" name="form-name" value="kontakt" />
+          <p class="hidden"><label>Bot: <input name="bot-field" /></label></p>
+
+          <label for="name">Name</label>
+          <input id="name" name="name" required />
+
+          <label for="email">E-Mail</label>
+          <input id="email" name="email" type="email" required />
+
+          <label for="msg">Nachricht</label>
+          <textarea id="msg" name="nachricht" rows="5" required></textarea>
+
+          <button type="submit" class="btn btn-primary">Senden</button>
+        </form>
+      </div>
+
+      <!-- Direktlinks -->
+      <aside class="ab-cta" aria-label="Direktkontakt">
+        <h3>Direkter Draht</h3>
+        <p class="muted">Du willst schnell Feedback oder einen ersten Call?</p>
+        <div class="ab-links">
+          <a class="ab-btn ab-btn-primary" href="mailto:hello@example.com">E-Mail senden</a>
+          <a class="ab-btn" href="#" target="_blank" rel="noopener">LinkedIn</a>
+          <a class="ab-btn" href="#" target="_blank" rel="noopener">GitHub</a>
+        </div>
+        <p class="muted" style="margin-top:8px">Impressum/Datenschutz findest du unten im Footer.</p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <p>© <span id="year"></span> Titel</p>
+      <div class="links">
+        <a href="#">Impressum</a>
+        <a href="#">Datenschutz</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>

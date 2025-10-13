@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SteadyTurtle</title>
+  <meta name="description" content="SteadyTurtle Beta auf TestFlight: Jetzt beitreten, testen und Feedback geben.">
+  <link rel="icon" href="assets/favicon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Social Preview -->
+  <meta property="og:title" content="SteadyTurtle">
+  <meta property="og:description" content="Hilf mit, SteadyTurtle zu perfektionieren. Sichere dir einen Platz in der Beta und erhalte frühen Zugang.">
+  <meta property="og:image" content="assets/steadyturtle-1.jpg">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <!-- Seite-spezifische Styles (st-*) -->
+  <style>
+    :root{
+      --st-border:#e2e8f0; --st-muted:#475569; --st-primary:#0f172a;
+      --st-grad-a:#4f46e5; --st-grad-b:#22d3ee;
+      --st-bg-soft:#f8fafc;
+    }
+
+    /* Layout / Hero */
+    .st-hero{
+      padding:64px 0 40px;
+      background:
+        radial-gradient(800px 480px at 85% -20%, rgba(79,70,229,.18), transparent 60%),
+        radial-gradient(700px 420px at -10% -10%, rgba(34,211,238,.18), transparent 60%),
+        linear-gradient(180deg,#fff,#f8fafc);
+    }
+    .st-wrap{display:grid;gap:24px;grid-template-columns:1fr}
+    @media(min-width:980px){.st-wrap{grid-template-columns:1.2fr .8fr}}
+
+    /* Typo / Badges / Cards */
+    .st-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#eef2ff;color:#3730a3;font-weight:600;font-size:.88rem}
+    .st-title{font-size:42px;line-height:1.1;margin:12px 0 8px}
+    .st-sub{color:var(--st-muted)}
+    .st-card{background:#fff;border:1px solid var(--st-border);border-radius:16px;box-shadow:0 10px 30px rgba(2,8,23,.08);padding:18px}
+    .st-cta{display:grid;gap:12px;grid-template-columns:1fr}
+    .st-btn{
+      display:inline-flex;align-items:center;justify-content:center;gap:10px;
+      padding:12px 16px;border-radius:12px;border:1px solid var(--st-border);
+      text-decoration:none;font-weight:700;box-shadow:0 8px 24px rgba(2,8,23,.08)
+    }
+    .st-btn-primary{background:linear-gradient(90deg,var(--st-grad-a),var(--st-grad-b));color:#fff;border-color:transparent}
+    .st-btn-outline{background:#fff;color:#0f172a}
+    .st-mini{font-size:.92rem;color:var(--st-muted)}
+    .st-badge{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border:1px dashed #cbd5e1;border-radius:999px;color:#334155;background:#f8fafc}
+    .st-steps{display:grid;gap:10px;margin-top:14px}
+    .st-step{display:flex;gap:10px;align-items:flex-start;background:#fff;border:1px solid var(--st-border);border-radius:12px;padding:10px 12px}
+    .st-step-num{flex:0 0 auto;height:28px;width:28px;border-radius:8px;background:#111827;color:#fff;display:grid;place-items:center;font-weight:800}
+
+    .st-side{display:grid;gap:12px}
+    .st-strip{display:grid;gap:10px;grid-template-columns:1fr 1fr}
+
+    .st-social{display:flex;gap:10px;flex-wrap:wrap}
+    .st-share{display:inline-flex;gap:8px;align-items:center;padding:8px 12px;border:1px solid var(--st-border);border-radius:10px;background:#fff;text-decoration:none}
+    .st-foot{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .st-kudos{font-size:.9rem;color:var(--st-muted)}
+
+    /* Rechter Info-Block (ersetzt Preis) */
+    .st-info{display:grid;gap:10px;padding:18px;border:1px solid var(--st-border);border-radius:16px;background:linear-gradient(180deg,#ffffff,#f8fafc)}
+    .st-info h3{margin:0}
+
+    /* ==== Bild-FIX: KEIN Zuschneiden, Portrait sauber ==== */
+    .st-strip img {
+      width: 100%;
+      height: auto;           /* keine feste Hoehe */
+      object-fit: contain;    /* Bild komplett anzeigen */
+      background: var(--st-bg-soft);
+      border-radius: 12px;
+      border: 1px solid var(--st-border);
+      padding: 6px;           /* kleiner Rand, optional */
+    }
+
+    /* Falls styles.css alte Regeln hat (z. B. object-fit: cover), sorgen diese fuer Vorrang: */
+    .st-strip img { object-position:center center !important; }
+
+    /* Optional: max-Hoehe auf grossen Screens, ohne Zuschneiden */
+    @media (min-width: 980px){
+      .st-strip img { max-height: 560px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header (wie bei dir) -->
+  <header class="site-header">
+    <div class="container">
+      <a href="index.html" class="brand">Titel</a>
+      <nav class="nav">
+        <a href="index.html" class="active">Start</a>
+        <a href="about.html">Ueber uns</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- HERO: Beta-Einladung + TestFlight -->
+  <section class="st-hero">
+    <div class="container st-wrap">
+      <div>
+        <span class="st-pill">Beta live auf TestFlight</span>
+        <h1 class="st-title">SteadyTurtle – Beta</h1>
+        <p class="st-sub">Hilf uns, SteadyTurtle zu perfektionieren. Tritt der Beta bei, nutze die App früh und gib kurzes Feedback. <strong>Begrenzte Plätze</strong>.</p>
+
+        <div class="st-card" style="margin-top:14px">
+          <div class="st-cta">
+            <!-- Primary: TestFlight-Link KOPIEREN (kein direktes Oeffnen) -->
+            <a class="st-btn st-btn-primary" id="testflightBtn" href="#" rel="noopener">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/>
+                <rect x="2" y="2" width="13" height="13" rx="2" stroke-width="2"/>
+              </svg>
+              TestFlight-Link kopieren
+            </a>
+
+            <div class="st-mini">
+              <span class="st-badge" id="slotsBadge">Noch <strong id="slotsNum">98</strong> Plätze frei</span>
+            </div>
+
+            <div class="st-foot">
+              <div class="st-social" aria-label="Teilen">
+                <a class="st-share" id="shareWhatsApp" href="#" target="_blank" rel="noopener">WhatsApp teilen</a>
+                <a class="st-share" id="shareTelegram" href="#" target="_blank" rel="noopener">Telegram teilen</a>
+                <a class="st-share" id="shareX" href="#" target="_blank" rel="noopener">Auf X teilen</a>
+                <button class="st-share" id="copyLinkBtn" type="button">Link kopieren</button>
+              </div>
+              <div class="st-kudos">Sag 2 Freunden Bescheid und hol dir frühen Zugriff ✨</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Onboarding Steps -->
+        <div class="st-steps">
+          <div class="st-step"><div class="st-step-num">1</div><div>Installiere die App in TestFlight und erlaube Benachrichtigungen.</div></div>
+          <div class="st-step"><div class="st-step-num">2</div><div>Kopiere den TestFlight-Link und in gib ihn in der App ein.</div></div>
+          <div class="st-step"><div class="st-step-num">3</div><div>Teste täglich 10 Minuten. Sende Feedback direkt in TestFlight oder per Mail.</div></div>
+        </div>
+      </div>
+
+      <!-- rechte Spalte: NUR Screens (ohne QR) + Beschreibung -->
+      <div class="st-side">
+        <div class="st-strip">
+          <img src="assets/steadyturtle-1.jpg" alt="SteadyTurtle Screen 1">
+          <img src="assets/steadyturtle-2.jpg" alt="SteadyTurtle Screen 2">
+        </div>
+
+        <div class="st-info" aria-label="Beschreibung">
+          <h3>Beschreibung</h3>
+          <p class="st-mini">
+Steady Turtle ist eine soziale Challenge-App, inspiriert vom Märchen von Hase und Schildkröte.
+Hier zählt nicht, wer am schnellsten ist – sondern wer dranbleibt.
+
+Mach tägliche Challenges mit Freund:innen, teile Fotos deiner Fortschritte und motiviere dich gegenseitig. Im gemeinsamen Feed siehst du, wie alle Schritt für Schritt vorankommen – ganz nach dem Motto: Langsam, aber steady.
+
+Coach Turtley begleitet dich dabei mit Tipps, Humor und liebevoller Erinnerung, weiterzumachen.
+
+Egal ob Sport, Lernen oder kleine Alltagsziele – Steady Turtle hilft dir, dranzubleiben und gemeinsam zu wachsen.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Kurz warum (SEO) -->
+  <main class="section">
+    <div class="container">
+      <h2>Warum SteadyTurtle?</h2>
+      <p class="st-sub">Konstanz statt Perfektion: kleine, taegliche Schritte fuehren zu echtem Fortschritt. SteadyTurtle macht es super einfach, dranzubleiben.</p>
+
+      <div class="grid" style="grid-template-columns:1fr 1fr 1fr; gap:12px; margin-top:12px">
+        <div class="st-step"><div class="st-step-num">A</div><div><strong>Minimal UI</strong><br/>Schnell, klar, ohne Overhead.</div></div>
+        <div class="st-step"><div class="st-step-num">B</div><div><strong>Streaks & Nudges</strong><br/>Sanfte Motivation statt Druck.</div></div>
+        <div class="st-step"><div class="st-step-num">C</div><div><strong>Offline-first</strong><br/>Funktioniert auch ohne Netz.</div></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <p>© <span id="year"></span> Titel</p>
+      <div class="links">
+        <a href="#">Impressum</a>
+        <a href="#">Datenschutz</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Jahr
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    // Deinen echten TestFlight-Link HIER eintragen:
+    const TESTFLIGHT_URL = "https://testflight.apple.com/join/DEINCODE";
+
+    // Primary-CTA: kopiert TestFlight-Link
+    const copyMain = async () => {
+      try {
+        await navigator.clipboard.writeText(TESTFLIGHT_URL);
+        const btn = document.getElementById('testflightBtn');
+        btn.textContent = "Link kopiert ✓";
+        setTimeout(()=>btn.textContent="TestFlight-Link kopieren", 2000);
+      } catch (e) {
+        alert("Kopieren nicht moeglich. Link: " + TESTFLIGHT_URL);
+      }
+    };
+    document.getElementById('testflightBtn').addEventListener('click', (e) => {
+      e.preventDefault();
+      copyMain();
+    });
+
+    // Share-Links
+    const msg = encodeURIComponent("SteadyTurtle Beta – TestFlight: " + TESTFLIGHT_URL);
+    document.getElementById('shareWhatsApp').href = "https://wa.me/?text=" + msg;
+    document.getElementById('shareTelegram').href = "https://t.me/share/url?url=" + encodeURIComponent(TESTFLIGHT_URL) + "&text=" + encodeURIComponent("SteadyTurtle Beta testen");
+    document.getElementById('shareX').href = "https://twitter.com/intent/tweet?text=" + msg;
+
+    // Zweiter Copy-Button
+    document.getElementById('copyLinkBtn').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(TESTFLIGHT_URL);
+        document.getElementById('copyLinkBtn').textContent = "Link kopiert ✓";
+        setTimeout(()=>document.getElementById('copyLinkBtn').textContent="Link kopieren", 2000);
+      } catch(e){
+        alert("Kopieren nicht moeglich. Link: " + TESTFLIGHT_URL);
+      }
+    });
+
+    // Knappheit (optional, Demo)
+    const base = 97;
+    const slots = Math.max(15, base - Math.floor(Date.now()/60000)%50);
+    const numEl = document.getElementById('slotsNum');
+    if (numEl) numEl.textContent = slots.toString();
+  </script>
+</body>
+</html>
