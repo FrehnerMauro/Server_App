@@ -383,6 +383,7 @@ def challenge_confirm(cid: int):
             }
         else:
             # Heutiger Tag NICHT fällig → Extra-Live (Fail-Guthaben)
+            ustat["conf_count"] = int(ustat.get("conf_count", 0)) + 1
             ustat["fail_count"] = int(ustat.get("fail_count", 0)) - 1
             ustat["lastTodayState"] = "done"
             ustat["state"] = "not_pending"
