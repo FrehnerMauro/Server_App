@@ -1,11 +1,12 @@
 from flask import Flask
 from backend.common.store import load
-from backend.blueprints import auth_routes, users, friends, challenges, feed, notifications, admin
+from backend.blueprints import auth_routes, users, friends, challenges, feed, notifications, admin, ai_chat
 
 def create_app():
     app = Flask(__name__)
-    load()  # state.json laden oder Defaults setzen
+    load()
 
+    # Blueprints registrieren
     app.register_blueprint(auth_routes.bp)
     app.register_blueprint(users.bp)
     app.register_blueprint(friends.bp)
@@ -13,11 +14,13 @@ def create_app():
     app.register_blueprint(feed.bp)
     app.register_blueprint(notifications.bp)
     app.register_blueprint(admin.bp)
-    
+    app.register_blueprint(ai_chat.bp)  # <--- Neu
+
+    # Ollama lokal auf dem gleichen iMac
+    app.config["OLLAMA_BASE_URL"] = "http://localhost:11434"
 
     @app.get("/")
     def root():
-        
         return {"ok": True, "service": "social-habit-backend"}
 
     return app

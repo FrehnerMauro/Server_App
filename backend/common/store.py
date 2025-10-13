@@ -200,3 +200,4 @@ def add_challenge_user_log(challenge_id: int,
     logs_for_user.append(entry)
     save()
     return entry
+
