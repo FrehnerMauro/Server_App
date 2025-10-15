@@ -138,10 +138,9 @@ def my_posts():
     return jsonify([_augment(p, uid) for p in posts])
 
 @bp.get("/users/<int:uid>/posts")
-@auth_required
 def user_posts(uid: int):
     st = state()
-    me = request.uid
+    me = uid
     posts = [p for p in st.get("feed_posts", []) if p.get("userId") == uid]
     visible = [p for p in posts if _visible_for_user(st, p, me)]
     visible.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
