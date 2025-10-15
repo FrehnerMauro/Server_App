@@ -43,9 +43,8 @@ def add_challenge_confirm(challenge_id: int, user_id: int,
     posts_for_user.append(confirm.copy())
 
     # --- 3. In Feed aufnehmen, wenn öffentlich für Freunde ---
-    if confirm["visibility"] == "freunde":
-        feed = st.setdefault("feed_posts", [])
-        feed.append(confirm.copy())
+    feed = st.setdefault("feed_posts", [])
+    feed.append(confirm.copy())
 
     save()
     return confirm
