@@ -1,89 +1,138 @@
 from flask import Blueprint, request, jsonify
 from backend.common.auth import auth_required
-from backend.common.store import state, next_id, now_ms, save
-from backend.models.schemas import FriendReqBody
-from pydantic import ValidationError
+from backend.common.store import Database, now_ms
 
 bp = Blueprint("friends", __name__)
+db = Database("state.db")
 
-@bp.get("/friends")
-@auth_required
-def list_friends():
-    st = state()
-    uid = request.uid
-    # accepted beidseitig
-    accepted = [fr for fr in st["friends"] if (fr["fromUserId"] == uid or fr["toUserId"] == uid)]
-    # map to users
-    user_ids = set()
-    for fr in accepted:
-        user_ids.add(fr["fromUserId"])
-        user_ids.add(fr["toUserId"])
-    user_ids.discard(uid)
-    res = [st["users"].get(str(i)) for i in user_ids]
-    return jsonify([u for u in res if u])
+# ============================================================
+# FRIEND REQUESTS (Pending)
+# ============================================================
 
 @bp.get("/friends/requests")
 @auth_required
 def list_friend_requests():
-    direction = (request.args.get("direction") or "").lower()
-    st = state()
+    """Zeigt alle offenen Freundschaftsanfragen, die an den eingeloggten User gerichtet sind."""
     uid = request.uid
-    reqs = st["friend_requests"]
-    if direction == "incoming":
-        data = [r for r in reqs if r["toUserId"] == uid and r["status"] == "pending"]
-    elif direction == "outgoing":
-        data = [r for r in reqs if r["fromUserId"] == uid and r["status"] == "pending"]
-    else:
-        data = reqs
-    return jsonify(data)
+    rows = db.query("""
+        SELECT 
+            f.id,
+            f.user_id AS from_user_id,
+            f.friend_id AS to_user_id,
+            f.status,
+            f.created_at,
+            u.display_name,
+            u.avatar_url
+        FROM user_friends f
+        JOIN users u ON u.id = f.user_id
+        WHERE f.friend_id = ? AND f.status = 'pending'
+        ORDER BY f.created_at DESC
+    """, (uid,))
+    return jsonify(rows)
 
-@bp.post("/friends/requests")
+# ============================================================
+# SEND REQUEST
+# ============================================================
+
+@bp.post("/friends/request/<int:to_user_id>")
 @auth_required
-def send_friend_request():
-    try:
-        body = FriendReqBody(**(request.get_json(force=True) or {}))
-    except ValidationError as e:
-        return jsonify({"error": "validation", "details": e.errors()}), 400
-
-    st = state()
+def send_friend_request(to_user_id: int):
+    """Sende eine Freundschaftsanfrage."""
     uid = request.uid
-    rid = next_id(st, "friend_req_id")
-    req = {
-        "id": rid,
-        "fromUserId": uid,
-        "toUserId": body.toUserId,
-        "message": body.message,
+    if uid == to_user_id:
+        return jsonify({"error": "cannot_add_self"}), 400
+
+    # Prüfen ob bestehende Freundschaft oder Anfrage
+    existing = db.query_one("""
+        SELECT * FROM user_friends
+        WHERE 
+            (user_id=? AND friend_id=?) OR (user_id=? AND friend_id=?)
+    """, (uid, to_user_id, to_user_id, uid))
+
+    if existing:
+        match existing["status"]:
+            case "pending":  return jsonify({"error": "already_requested"}), 400
+            case "accepted": return jsonify({"error": "already_friends"}), 400
+            case "blocked":  return jsonify({"error": "blocked"}), 403
+
+    db.insert("user_friends", {
+        "user_id": uid,
+        "friend_id": to_user_id,
         "status": "pending",
-        "createdAt": now_ms()
-    }
-    st["friend_requests"].append(req)
-    save()
-    return jsonify(req), 201
-
-@bp.post("/friends/requests/<int:rid>/accept")
-@auth_required
-def accept_friend_request(rid: int):
-    st = state()
-    req = next((r for r in st["friend_requests"] if r["id"] == rid), None)
-    if not req:
-        return jsonify({"error": "not_found"}), 404
-    req["status"] = "accepted"
-    st["friends"].append({
-        "id": next_id(st, "friend_id"),
-        "fromUserId": req["fromUserId"],
-        "toUserId": req["toUserId"],
-        "since": now_ms()
+        "created_at": now_ms(),
+        "updated_at": now_ms()
     })
-    save()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "message": "request_sent"})
 
-@bp.post("/friends/requests/<int:rid>/decline")
+# ============================================================
+# ACCEPT REQUEST
+# ============================================================
+
+@bp.post("/friends/accept/<int:request_id>")
 @auth_required
-def decline_friend_request(rid: int):
-    st = state()
-    req = next((r for r in st["friend_requests"] if r["id"] == rid), None)
+def accept_friend_request(request_id: int):
+    """Akzeptiere eine eingehende Freundschaftsanfrage."""
+    req = db.query_one("SELECT * FROM user_friends WHERE id=?", (request_id,))
     if not req:
         return jsonify({"error": "not_found"}), 404
-    req["status"] = "declined"
-    save()
-    return jsonify({"ok": True})
+    if req["friend_id"] != request.uid:
+        return jsonify({"error": "forbidden"}), 403
+
+    db.update(
+        "user_friends",
+        {"status": "accepted", "updated_at": now_ms()},
+        "id=?",
+        (request_id,)
+    )
+    return jsonify({"ok": True, "message": "request_accepted"})
+
+# ============================================================
+# DECLINE REQUEST
+# ============================================================
+
+@bp.post("/friends/decline/<int:request_id>")
+@auth_required
+def decline_friend_request(request_id: int):
+    """Lehne eine eingehende Freundschaftsanfrage ab."""
+    req = db.query_one("SELECT * FROM user_friends WHERE id=?", (request_id,))
+    if not req:
+        return jsonify({"error": "not_found"}), 404
+    if req["friend_id"] != request.uid:
+        return jsonify({"error": "forbidden"}), 403
+
+    db.update(
+        "user_friends",
+        {"status": "declined", "updated_at": now_ms()},
+        "id=?",
+        (request_id,)
+    )
+    return jsonify({"ok": True, "message": "request_declined"})
+
+# ============================================================
+# FRIEND LIST (Accepted)
+# ============================================================
+
+@bp.get("/friends/list")
+@auth_required
+def list_friends():
+    """Zeigt alle bestätigten Freunde des eingeloggten Users."""
+    uid = request.uid
+    rows = db.query("""
+        SELECT 
+            CASE 
+                WHEN f.user_id = ? THEN f.friend_id
+                ELSE f.user_id
+            END AS friend_id,
+            u.display_name,
+            u.avatar_url,
+            u.email
+        FROM user_friends f
+        JOIN users u ON u.id = CASE 
+            WHEN f.user_id = ? THEN f.friend_id
+            ELSE f.user_id
+        END
+        WHERE (f.user_id = ? OR f.friend_id = ?)
+          AND f.status = 'accepted'
+        ORDER BY u.display_name
+    """, (uid, uid, uid, uid))
+    return jsonify(rows)

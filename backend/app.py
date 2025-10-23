@@ -1,12 +1,29 @@
 from flask import Flask
-from backend.common.store import load
-from backend.blueprints import auth_routes, users, friends, challenges, feed, notifications, admin, ai_chat
+from flask_cors import CORS
+
+# Blueprints
+from backend.blueprints import (
+    auth_routes,
+    users,
+    friends,
+    challenges,
+    feed,
+    notifications,
+    admin
+)
 
 def create_app():
+    """Erzeugt die Flask-App-Instanz."""
     app = Flask(__name__)
-    load()
 
+    # ----------------------------------------------------
+    # CORS aktivieren (für Frontend-Kommunikation)
+    # ----------------------------------------------------
+    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+
+    # ----------------------------------------------------
     # Blueprints registrieren
+    # ----------------------------------------------------
     app.register_blueprint(auth_routes.bp)
     app.register_blueprint(users.bp)
     app.register_blueprint(friends.bp)
@@ -14,14 +31,14 @@ def create_app():
     app.register_blueprint(feed.bp)
     app.register_blueprint(notifications.bp)
     app.register_blueprint(admin.bp)
-    app.register_blueprint(ai_chat.bp)  # <--- Neu
 
-    # Ollama lokal auf dem gleichen iMac
-    app.config["OLLAMA_BASE_URL"] = "http://localhost:11434"
-
-
+    # Optional: Healthcheck
+    @app.get("/health")
+    def health():
+        return {"status": "ok"}
 
     return app
+
 
 if __name__ == "__main__":
     app = create_app()

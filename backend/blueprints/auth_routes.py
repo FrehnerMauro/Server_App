@@ -1,16 +1,34 @@
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from backend.models.schemas import RegisterBody, LoginBody
-from backend.common.store import state, save, next_id
+from backend.common.store import Database, now_ms
 from backend.common.auth import auth_required
-
-import base64
+import hashlib, base64
 
 bp = Blueprint("auth", __name__)
+db = Database("state.db")
 
-# ------------------------------
-# Registrierung / Login / Me
-# ------------------------------
+# ------------------------------------------------------------
+# Hilfsfunktionen
+# ------------------------------------------------------------
+
+def _hash(s: str) -> str:
+    """SHA256-Hash eines Passworts (oder leeren Strings)."""
+    return hashlib.sha256((s or "").encode("utf-8")).hexdigest()
+
+
+def _strip_user(user: dict) -> dict:
+    """Entfernt sicherheitsrelevante Felder aus Userdaten."""
+    if not user:
+        return user
+    u = dict(user)
+    u.pop("password", None)
+    return u
+
+
+# ------------------------------------------------------------
+# Registrierung
+# ------------------------------------------------------------
 
 @bp.post("/register")
 def register():
@@ -19,28 +37,38 @@ def register():
     except ValidationError as e:
         return jsonify({"error": "validation", "details": e.errors()}), 400
 
-    st = state()
-    # email uniq?
-    if any(u for u in st["users"].values() if u["email"].lower() == body.email.lower()):
+    # Prüfen, ob Email existiert
+    user = db.query_one("SELECT * FROM users WHERE LOWER(email)=LOWER(?) LIMIT 1", (body.email,))
+    if user:
         return jsonify({"error": "email_exists"}), 400
 
-    uid = next_id(st, "user_id")
-    user = {
-        "id": uid,
-        "vorname": body.vorname,
-        "name": body.name,
+    # Benutzer eintragen
+    uid = db.insert("users", {
+        "username": f"{body.vorname.lower()}.{body.name.lower()}",
+        "display_name": f"{body.vorname} {body.name}",
         "email": body.email,
-        "avatar": body.avatar  # optional data-url / http-url
-    }
-    st["users"][str(uid)] = user
-    save()
+        "avatar_url": body.avatar,
+        "password": _hash(body.password),  # Passwort gehasht speichern
+        "is_admin": 0,
+        "created_at": now_ms(),
+        "updated_at": now_ms()
+    })
 
-    # token ausgeben
-    token = f"token-{uid}"
-    st["auth"]["tokens"][token] = uid
-    save()
-    return jsonify({"token": token, "user": user}), 201
+    # Neues Token erzeugen
+    token = f"token-{uid}-{now_ms()}"
+    db.insert("auth_tokens", {
+        "user_id": uid,
+        "token": token,
+        "created_at": now_ms()
+    })
 
+    user = db.find("users", id=uid)
+    return jsonify({"token": token, "user": _strip_user(user)}), 201
+
+
+# ------------------------------------------------------------
+# Login
+# ------------------------------------------------------------
 
 @bp.post("/login")
 def login():
@@ -49,137 +77,115 @@ def login():
     except ValidationError as e:
         return jsonify({"error": "validation", "details": e.errors()}), 400
 
-    st = state()
-    # Demo: Passwort wird nicht validiert; akzeptiere jede Kombi, wenn email existiert
-    usr = next((u for u in st["users"].values() if u["email"].lower() == body.email.lower()), None)
-    if not usr:
+    user = db.query_one("SELECT * FROM users WHERE LOWER(email)=LOWER(?) LIMIT 1", (body.email,))
+    if not user:
         return jsonify({"error": "login_failed"}), 401
 
-    token = f"token-{usr['id']}"
-    st["auth"]["tokens"][token] = usr["id"]
-    save()
-    return jsonify({"token": token, "user": usr})
+    # Passwortprüfung (Hash-Vergleich)
+    if user.get("password") != _hash(body.password):
+        return jsonify({"error": "login_failed"}), 401
 
+    # Alte Tokens löschen
+    db.delete("auth_tokens", "user_id=?", (user["id"],))
+
+    # Neues Token erstellen
+    token = f"token-{user['id']}-{now_ms()}"
+    db.insert("auth_tokens", {
+        "user_id": user["id"],
+        "token": token,
+        "created_at": now_ms()
+    })
+
+    return jsonify({"token": token, "user": _strip_user(user)})
+
+
+# ------------------------------------------------------------
+# Eigene Profildaten abrufen
+# ------------------------------------------------------------
 
 @bp.get("/me")
+@auth_required
 def me():
-    @auth_required
-    def inner():
-        st = state()
-        uid = request.uid
-        return jsonify(st["users"].get(str(uid)))
-    return inner()
+    user = db.find("users", id=request.uid)
+    if not user:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify(_strip_user(user))
 
-# ------------------------------
-# Profil-Änderungen (eingeloggter User)
-# ------------------------------
+
+# ------------------------------------------------------------
+# Benutzerprofil aktualisieren
+# ------------------------------------------------------------
 
 @bp.patch("/me")
+@auth_required
 def update_me():
-    """
-    JSON-Body (alle Felder optional):
-    {
-      "vorname": "Mauro",
-      "name": "Frehner",
-      "avatar": "data:image/png;base64,..." | "https://..."  (optional)
-    }
-    """
-    @auth_required
-    def inner():
-        st = state()
-        uid = str(request.uid)
-        user = st["users"].get(uid)
-        if not user:
-            return jsonify({"error": "not_found"}), 404
+    user = db.find("users", id=request.uid)
+    if not user:
+        return jsonify({"error": "not_found"}), 404
 
-        data = request.get_json(silent=True) or {}
-        # sanitize & apply
-        if "vorname" in data:
-            v = (data.get("vorname") or "").strip()
-            user["vorname"] = v or None
+    data = request.get_json(silent=True) or {}
+    updates = {}
 
-        if "name" in data:
-            n = (data.get("name") or "").strip()
-            if not n:
-                return jsonify({"error": "validation", "field": "name", "message": "name required"}), 400
-            if len(n) > 100:
-                return jsonify({"error": "validation", "field": "name", "message": "too long"}), 400
-            user["name"] = n
+    if "vorname" in data:
+        vor = data["vorname"].strip()
+        alt_name = (user.get("display_name") or "").split(" ")
+        nach = alt_name[-1] if len(alt_name) > 1 else ""
+        updates["display_name"] = f"{vor} {nach}"
 
-        if "avatar" in data:
-            a = (data.get("avatar") or "").strip()
-            # Optional: minimale Validierung
-            if a and not (a.startswith("data:image/") or a.startswith("http://") or a.startswith("https://")):
-                return jsonify({"error": "validation", "field": "avatar", "message": "must be data-url or http(s) url"}), 400
-            user["avatar"] = a or None
+    if "name" in data:
+        nach = data["name"].strip()
+        alt_name = (user.get("display_name") or "").split(" ")
+        vor = alt_name[0] if alt_name else ""
+        updates["display_name"] = f"{vor} {nach}"
 
-        st["users"][uid] = user
-        save()
-        return jsonify(user)
+    if "avatar" in data:
+        a = (data["avatar"] or "").strip()
+        if a and not (a.startswith("data:image/") or a.startswith("http")):
+            return jsonify({"error": "validation", "field": "avatar", "message": "invalid format"}), 400
+        updates["avatar_url"] = a or None
 
-    return inner()
+    # Passwort ändern (wenn gewünscht)
+    if "password" in data:
+        pw = data["password"].strip()
+        if len(pw) < 4:
+            return jsonify({"error": "validation", "field": "password", "message": "too_short"}), 400
+        updates["password"] = _hash(pw)
 
+    if updates:
+        updates["updated_at"] = now_ms()
+        db.update("users", updates, "id=?", (request.uid,))
+
+    return jsonify(_strip_user(db.find("users", id=request.uid)))
+
+
+# ------------------------------------------------------------
+# Avatar-Upload & Löschen
+# ------------------------------------------------------------
 
 @bp.post("/me/avatar")
+@auth_required
 def upload_avatar_me():
-    """
-    Multipart Upload:
-      Content-Type: multipart/form-data
-      Feld: file (image/*)
+    if "file" not in request.files:
+        return jsonify({"error": "no_file"}), 400
 
-    Speichert das Bild als data-url (base64) in user.avatar und gibt den User zurück.
-    Größenlimit: 5 MB
-    """
-    @auth_required
-    def inner():
-        if "file" not in request.files:
-            return jsonify({"error": "no_file"}), 400
+    f = request.files["file"]
+    mime = (f.mimetype or "").lower()
+    if not mime.startswith("image/"):
+        return jsonify({"error": "invalid_type"}), 400
 
-        f = request.files["file"]
-        mime = (f.mimetype or "").lower()
+    data = f.read()
+    if len(data) > 5 * 1024 * 1024:
+        return jsonify({"error": "too_large"}), 400
 
-        if not mime.startswith("image/"):
-            return jsonify({"error": "invalid_type", "message": "image/* required"}), 400
+    b64 = base64.b64encode(data).decode("ascii")
+    data_url = f"data:{mime};base64,{b64}"
 
-        content = f.read()
-        max_bytes = 5 * 1024 * 1024  # 5 MB
-        if len(content) > max_bytes:
-            return jsonify({"error": "too_large", "message": "max 5MB"}), 400
-
-        # data-url bauen
-        b64 = base64.b64encode(content).decode("ascii")
-        data_url = f"data:{mime};base64,{b64}"
-
-        st = state()
-        uid = str(request.uid)
-        user = st["users"].get(uid)
-        if not user:
-            return jsonify({"error": "not_found"}), 404
-
-        user["avatar"] = data_url
-        st["users"][uid] = user
-        save()
-        return jsonify({"ok": True, "user": user})
-
-    return inner()
+    db.update("users", {"avatar_url": data_url, "updated_at": now_ms()}, "id=?", (request.uid,))
+    return jsonify({"ok": True, "user": _strip_user(db.find("users", id=request.uid))})
 
 
 @bp.delete("/me/avatar")
+@auth_required
 def delete_avatar_me():
-    """
-    Löscht den Avatar (setzt user.avatar = None).
-    """
-    @auth_required
-    def inner():
-        st = state()
-        uid = str(request.uid)
-        user = st["users"].get(uid)
-        if not user:
-            return jsonify({"error": "not_found"}), 404
-
-        user["avatar"] = None
-        st["users"][uid] = user
-        save()
-        return jsonify({"ok": True, "user": user})
-
-    return inner()
+    db.update("users", {"avatar_url": None, "updated_at": now_ms()}, "id=?", (request.uid,))
+    return jsonify({"ok": True, "user": _strip_user(db.find("users", id=request.uid))})

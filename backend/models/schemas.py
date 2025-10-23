@@ -1,17 +1,17 @@
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 # Auth
-class RegisterBody(BaseModel):
-    vorname: Optional[str] = None
-    name: str
-    email: EmailStr
-    passwort: str
-    avatar: Optional[str] = None
-
 class LoginBody(BaseModel):
-    email: EmailStr
-    passwort: str
+    email: str
+    password: str 
+
+class RegisterBody(BaseModel):
+    vorname: str
+    name: str
+    email: str
+    password: str 
+    avatar: str | None = None
 
 # Challenges
 class CreateChallengeBody(BaseModel):

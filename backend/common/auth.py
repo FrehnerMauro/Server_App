@@ -1,24 +1,31 @@
-# common/auth.py
 from functools import wraps
 from flask import request, jsonify
-from backend.common.store import state
+from backend.common.store import Database
+
+# Globale DB-Instanz
+db = Database("state.db")
 
 def auth_required(fn):
     """
-    Prueft auf Authorization: Bearer <token>.
-    Legt bei Erfolg request.uid (int) fuer den aktuellen User.
+    Decorator, der prüft, ob der Request ein gültiges Token enthält.
+    Erwartet Header: Authorization: Bearer <token>
     """
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        auth = request.headers.get("Authorization", "").strip()
-        token = None
-        if auth.lower().startswith("bearer "):
-            token = auth.split(" ", 1)[1].strip()
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"error": "missing_token"}), 401
 
-        tokens = state().get("auth", {}).get("tokens", {})
-        if not token or token not in tokens:
-            return jsonify({"error": "unauthorized"}), 401
+        token = auth_header.split(" ", 1)[1].strip()
+        if not token:
+            return jsonify({"error": "empty_token"}), 401
 
-        request.uid = tokens[token]
+        row = db.query_one("SELECT user_id FROM auth_tokens WHERE token=?", (token,))
+        if not row:
+            return jsonify({"error": "invalid_token"}), 401
+
+        request.uid = row["user_id"]
         return fn(*args, **kwargs)
+
     return wrapper
+

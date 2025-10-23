@@ -1,35 +1,27 @@
 from __future__ import annotations
-
-from flask import Blueprint, request, jsonify, Response
+from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from datetime import datetime, timedelta, timezone, date
-from collections import defaultdict
 
 from backend.common.auth import auth_required
-from backend.common.store import state, save, now_ms, next_id
+from backend.common.store import Database, now_ms, next_id
 from backend.models.schemas import (
     CreateChallengeBody,
     ChatBody,
     ConfirmBody,
     ChallengeInviteBody,
 )
+from backend.services.stats import init_challenge_members
 from backend.services.store_confirm import add_challenge_confirm
-from backend.services.stats import (
-    challenge_update_stats,
-    init_challenge_members,
-)
 
 bp = Blueprint("challenges", __name__)
+db = Database("state.db")
 
-# ------------------------------------------------------------
-# Kleine Helper
-# ------------------------------------------------------------
+# ============================================================
+# Helper
+# ============================================================
 
 def _normalize_weekdays(raw_list):
-    """
-    Normalisiert z. B. ["Mon", "DI", "dienstag"] → [0,1,2,...]
-    Montag=0, Sonntag=6
-    """
     mapping = {
         "mo": 0, "mon": 0, "montag": 0,
         "di": 1, "tue": 1, "dienstag": 1,
@@ -50,103 +42,47 @@ def _normalize_weekdays(raw_list):
     return sorted(set(result))
 
 def _to_local_date_from_ts(ts: int, tz_offset_min: int) -> date:
-    """Akzeptiert Sekunden oder Millisekunden."""
-    if ts > 10**12:  # ms -> s
+    if ts > 10**12:
         ts = ts // 1000
     tz = timezone(timedelta(minutes=tz_offset_min))
     return datetime.fromtimestamp(int(ts), tz).date()
 
-def _is_due_day(day: date, start_date: date, end_date: date, faellige: list[int]) -> bool:
-    """Prüft, ob ein Tag innerhalb der Laufzeit und laut faelligeWochentage fällig ist."""
-    if day < start_date or day > end_date:
-        return False
-    if not faellige:
-        return True
-    return day.weekday() in faellige
-
-def _challenge_name(cid: int) -> str:
-    ch = state().get("challenges", {}).get(str(cid)) or {}
-    name = (ch.get("name") or "").strip()
-    return name if name else f"Challenge #{cid}"
-
-def _display_name(uid: int) -> str:
-    u = state().get("users", {}).get(str(uid)) or {}
-    vor = (u.get("vorname") or "").strip()
-    nam = (u.get("name") or "").strip()
-    full = " ".join([p for p in [vor, nam] if p])
-    return full if full else (nam if nam else f"User {uid}")
-
-def _notify_challenge_members(
-    cid: int,
-    actor_uid: int,
-    text: str,
-    kind: str = "info",
-) -> None:
-    """
-    Schreibt eine Notification an ALLE Mitglieder (außer actor_uid).
-    Fügt challengeId/challengeName/type hinzu.
-    kind: "chat" | "confirm" | "info"
-    """
-    st = state()
-    members = [
-        m.get("userId")
-        for m in st.get("challenge_members", [])
-        if m.get("challengeId") == cid
-    ]
-    ch_name = _challenge_name(cid)
-
-    for target_uid in members:
-        if target_uid == actor_uid:
-            continue
-        notif = {
-            "id": next_id(st, "notification_id"),
-            "userId": int(target_uid),
-            "text": text,             # z. B. "[Daily Pushups] Max hat heute bestätigt."
-            "read": False,
-            "createdAt": now_ms(),
-            "challengeId": cid,
-            "challengeName": ch_name,
-            "fromUserId": actor_uid,
-            "type": kind,
-        }
-        st.setdefault("notifications", []).append(notif)
-
-    save()
-
-# ------------------------------------------------------------
-# List / Create
-# ------------------------------------------------------------
-
+# ============================================================
+# Challenge Listing
+# ============================================================
+"""
 @bp.get("/challenges/list")
 @auth_required
 def list_challenges():
-    st = state()
-    with_today = (request.args.get("withToday") or "").lower() == "true"
-    tz = int(request.args.get("tzOffsetMinutes", "0"))  # aktuell ungenutzt
     uid = request.uid
+    with_today = (request.args.get("withToday") or "").lower() == "true"
 
-    # Nur Challenges, bei denen der User Mitglied ist
-    member_ch_ids = {
-        m["challengeId"]
-        for m in st.get("challenge_members", [])
-        if m.get("userId") == uid
-    }
+    challenges = db.query("""
 
-    res = []
-    for ch in st.get("challenges", {}).values():
-        if ch.get("id") not in member_ch_ids:
-            continue
+""", (uid,))
 
-        item = dict(ch)
+    if not with_today:
+        return jsonify(challenges)
 
-        if with_today:
-            logs = st.get("challenge_logs", {}).get(str(ch["id"]), [])
-            status = "done" if any(l.get("userId") == uid for l in logs) else "open"
-            item["today"] = {"status": status, "pending": status == "open"}
+    # optional: Status für "heute"
+    logs_today = db.query("""
 
-        res.append(item)
+""", (uid,))
+    done_ids = {l["challenge_id"] for l in logs_today}
 
-    return jsonify(res)
+    for ch in challenges:
+        ch_id = ch["id"]
+        status = "done" if ch_id in done_ids else "open"
+        ch["today"] = {"status": status, "pending": status == "open"}
+
+    return jsonify(challenges)
+    
+    """
+
+
+# ============================================================
+# Challenge-Erstellung
+# ============================================================
 
 @bp.post("/challenges")
 @auth_required
@@ -156,87 +92,87 @@ def create_challenge():
     except ValidationError as e:
         return jsonify({"error": "validation", "details": e.errors()}), 400
 
-    st = state()
-    cid = next_id(st, "challenge_id")
-    ch = {
-        "id": cid,
-        "name": body.name,
-        "beschreibung": body.beschreibung,
-        "ownerId": request.uid,
-        "faelligeWochentage": body.faelligeWochentage,
-        "startAt": body.startAt or int(datetime.now().timestamp()),
-        "dauerTage": body.dauerTage,
-        "erlaubteFailsTage": body.erlaubteFailsTage,
-        "hinzugefuegtAt": now_ms()
-    }
-    st["challenges"][str(cid)] = ch
-    st.setdefault("challenge_members", []).append(
-        {"challengeId": cid, "userId": request.uid}
-    )
-    st.setdefault("challenge_logs", {})[str(cid)] = []
-    st.setdefault("challenge_chat", {})[str(cid)] = []
+    now = now_ms()
 
-    # Init nur für diese Challenge
-    tz = int(request.args.get("tzOffsetMinutes", "0"))
-    res = init_challenge_members(cid, tz_offset_minutes=tz)
-    if "error" in res:
-        return jsonify({"error": "init_failed", "details": res}), 400
+    # 1️⃣ Challenge anlegen
+    cid = db.insert("challenges", {
+        "title": body.name,
+        "description": body.beschreibung,
+        "creator_id": request.uid,
+        "due_weekdays": ",".join(map(str, body.faelligeWochentage or [])),
+        "start_at": body.startAt or int(datetime.now().timestamp()),
+        "duration_days": body.dauerTage,
+        "allowed_fails": body.erlaubteFailsTage,
+        "created_at": now,
+    })
 
-    save()
+    # 2️⃣ Creator wird Mitglied
+    db.insert("challenge_members", {
+        "challenge_id": cid,
+        "user_id": request.uid,
+        "joined_at": now
+    })
+
+    # 3️⃣ Stats initialisieren
+    db.insert("challenge_stats", {
+        "challenge_id": cid,
+        "user_id": request.uid,
+        "conf_count": 0,
+        "fail_count": 0,
+        "streak": 0,
+        "neg_streak": 0,
+        "blocked": "run",
+        "last_computed": None,
+        "created_at": now,
+        "updated_at": now
+    })
+
+    # 4️⃣ Chat vorbereiten
+    db.insert("challenge_chat", {
+        "challenge_id": cid,
+        "user_id": request.uid,
+        "message": "Challenge erstellt 🎯",
+        "image_url": None,
+        "created_at": now
+    })
+
+    # 5️⃣ Erfolgsmeldung
     return jsonify({"id": cid, "initialized": True}), 201
 
-# ------------------------------------------------------------
-# Detail / Members / Activity
-# ------------------------------------------------------------
+# ============================================================
+# Details / Mitglieder / Aktivität
+# ============================================================
 
 @bp.get("/challenges/<int:cid>")
 @auth_required
 def challenge_detail(cid: int):
-    ch = state()["challenges"].get(str(cid))
+    ch = db.find("challenges", where="id=?", params=(cid,))
     if not ch:
         return jsonify({"error": "not_found"}), 404
     return jsonify(ch)
 
+
 @bp.get("/challenges/<int:cid>/members")
 @auth_required
 def challenge_members(cid: int):
-    st = state()
-    mems = [m for m in st["challenge_members"] if m["challengeId"] == cid]
-    users = st["users"]
-    res = []
-    for m in mems:
-        u = users.get(str(m["userId"]))
-        if u:
-            res.append({
-                "id": u["id"],
-                "vorname": u.get("vorname"),
-                "name": u["name"],
-                "avatar": u.get("avatar"),
-            })
+    res = db.query("""
+        SELECT u.id, u.vorname, u.name, u.avatar
+        FROM challenge_members m
+        JOIN users u ON u.id = m.user_id
+        WHERE m.challenge_id = ?
+    """, (cid,))
     return jsonify(res)
+
 
 @bp.get("/challenges/<int:cid>/activity")
 @auth_required
 def challenge_activity(cid: int):
-    st = state()
-    logs = st.get("challenge_logs", {}).get(str(cid), [])
-    res = []
-    for l in logs:
-        res.append({
-            "id": l["id"],
-            "action": l["action"],
-            "evidence": l.get("evidence"),
-            "timestamp": l.get("timestamp"),
-            "userId": l.get("userId"),
-            "name": l.get("name"),
-            "vorname": l.get("vorname"),
-            "avatar": l.get("avatar"),
-        })
-    return jsonify(res)
+    logs = db.query("SELECT * FROM challenge_logs WHERE challenge_id=?", (cid,))
+    return jsonify(logs)
 
-# ------------------------------------------------------------
+# ============================================================
 # Chat
-# ------------------------------------------------------------
+# ============================================================
 
 @bp.post("/challenges/<int:cid>/chat")
 @auth_required
@@ -246,188 +182,75 @@ def post_chat(cid: int):
     except ValidationError as e:
         return jsonify({"error": "validation", "details": e.errors()}), 400
 
-    st = state()
-    if str(cid) not in st["challenge_chat"]:
-        st["challenge_chat"][str(cid)] = []
-
     msg = {
-        "id": next_id(st, "chat_msg_id"),
-        "userId": request.uid,
+        "challenge_id": cid,
+        "user_id": request.uid,
         "text": body.text,
-        "createdAt": now_ms()
+        "created_at": now_ms(),
     }
-    st["challenge_chat"][str(cid)].append(msg)
-    save()
-
-    # 🔔 Notification an alle Mitglieder (außer Sender)
-    sender = _display_name(request.uid)
-    ch_name = _challenge_name(cid)
-    preview = (body.text or "").strip()
-    if len(preview) > 50:
-        preview = preview[:50] + "…"
-    _notify_challenge_members(
-        cid,
-        request.uid,
-        f"[{ch_name}] {sender} hat im Challenge-Chat geschrieben: {preview}",
-        kind="chat",
-    )
+    db.insert("challenge_chat", msg)
 
     return jsonify(msg), 201
+
 
 @bp.get("/challenges/<int:cid>/chat")
 @auth_required
 def list_chat(cid: int):
-    st = state()
-    return jsonify(st.get("challenge_chat", {}).get(str(cid), []))
+    msgs = db.query("SELECT * FROM challenge_chat WHERE challenge_id=?", (cid,))
+    return jsonify(msgs)
 
-# ------------------------------------------------------------
+# ============================================================
 # Confirm
-# ------------------------------------------------------------
+# ============================================================
 
 @bp.post("/challenges/<int:cid>/confirm")
 @auth_required
 def challenge_confirm(cid: int):
-    st = state()
-    uid = request.uid
-    ch = st["challenges"].get(str(cid))
+    ch = db.find("challenges", where="id=?", params=(cid,))
     if not ch:
         return jsonify({"error": "not_found"}), 404
 
-    # Mitgliedschaft
-    if not any(m for m in st.get("challenge_members", [])
-               if m.get("challengeId") == cid and m.get("userId") == uid):
-        return jsonify({"error": "forbidden"}), 403
-
-    # Body
     try:
         body = ConfirmBody(**(request.get_json(force=True) or {}))
     except ValidationError as e:
         return jsonify({"error": "validation", "details": e.errors()}), 400
 
-    # Zeit + TZ
-    ts = body.timestamp or now_ms()
-    tz = int(request.args.get("tzOffsetMinutes", "0"))
-    tzinfo = timezone(timedelta(minutes=tz))
-    local_day = _to_local_date_from_ts(int(ts), tz)
-    today_local = datetime.now(tzinfo).date()
-
-    # Challenge-Metadaten für "faellig heute?"
-    start_at = ch.get("startAt")
-    dauer    = ch.get("dauerTage") or ch.get("days")
-    faellige = _normalize_weekdays(ch.get("faelligeWochentage") or [])
-    start_date = _to_local_date_from_ts(int(start_at), tz) if start_at else today_local
-    end_date = start_date + timedelta(days=int(dauer) - 1) if dauer else today_local
-    due_today = _is_due_day(today_local, start_date, end_date, faellige)
-
-    # User-Daten in Log
-    user = st.get("users", {}).get(str(uid), {})
-    user_info = {
-        "userId": uid,
-        "name": user.get("name"),
-        "vorname": user.get("vorname"),
-        "avatar": user.get("avatar"),
-    }
-
-    # Confirm / Log
     confirm = add_challenge_confirm(
         challenge_id=cid,
-        user_id=uid,
+        user_id=request.uid,
         image_url=body.imageUrl,
         caption=body.caption,
-        visibility=body.visibility or "freunde"
+        visibility=body.visibility or "freunde",
     )
-    confirm["timestamp"] = int(ts)
-    confirm.update(user_info)
 
-    logs = st.setdefault("challenge_logs", {}).setdefault(str(cid), [])
-    for i, c in enumerate(logs):
-        if c.get("id") == confirm.get("id"):
-            logs[i] = {**c, **confirm}
-            break
-    else:
-        logs.append(confirm)
-
-    # Realtime-Stat nur fuer TODAY
-    stats_all = st.setdefault("challenge_stats", {}).setdefault(str(cid), {})
-    per_user_map = stats_all.setdefault("perUser", {})
-    ustat = per_user_map.setdefault(str(uid), {
-        "userId": uid,
-        "conf_count": 0,
-        "fail_count": 0,
-        "streak": 0,
-        "neg_streak": 0,
-        "blocked": "run",
-        "state": "pending",
-        "lastTodayState": "not_done",
-        "lastComputedDate": None
+    db.insert("challenge_logs", {
+        "challenge_id": cid,
+        "user_id": request.uid,
+        "data_json": str(confirm),
+        "created_at": now_ms(),
     })
-
-    prev_last = ustat.get("lastTodayState")
-
-    if local_day == today_local:
-        if due_today:
-            # Heutiger fälliger Tag
-            ustat["conf_count"] = int(ustat.get("conf_count", 0)) + 1
-            ustat["streak"] = int(ustat.get("streak", 0)) + 1
-            ustat["neg_streak"] = 0
-            if prev_last == "not_done":
-                ustat["fail_count"] = max(0, int(ustat.get("fail_count", 0)) - 1)
-
-            ustat["lastTodayState"] = "done"
-            ustat["state"] = "pending"
-            ustat["today"] = {
-                "blocked": ustat.get("blocked", "run"),
-                "state": "done",
-                "pending": False,
-                "done": True
-            }
-        else:
-            # Heutiger Tag NICHT fällig → Extra-Live (Fail-Guthaben)
-            ustat["conf_count"] = int(ustat.get("conf_count", 0)) + 1
-            ustat["fail_count"] = int(ustat.get("fail_count", 0)) - 1
-            ustat["lastTodayState"] = "done"
-            ustat["state"] = "not_pending"
-            ustat["today"] = {
-                "blocked": ustat.get("blocked", "run"),
-                "state": "not_pending",
-                "pending": False,
-                "done": True
-            }
-
-    ustat["lastComputedAt"] = now_ms()
-    per_user_map[str(uid)] = ustat
-    save()
-
-    # 🔔 Notification (mit Challenge-Namen)
-    sender = _display_name(uid)
-    ch_name = _challenge_name(cid)
-    _notify_challenge_members(
-        cid,
-        uid,
-        f"[{ch_name}] {sender} hat heute bestätigt.",
-        kind="confirm",
-    )
 
     return jsonify({"ok": True, "confirm": confirm}), 201
 
-# ------------------------------------------------------------
+# ============================================================
 # Invites
-# ------------------------------------------------------------
+# ============================================================
 
 @bp.get("/challenges/invites")
 @auth_required
 def list_invites():
     direction = (request.args.get("direction") or "").lower()
-    st = state()
     uid = request.uid
-    inv = st["challenge_invites"]
+
     if direction == "incoming":
-        data = [i for i in inv if i["toUserId"] == uid and i["status"] == "pending"]
+        data = db.query("SELECT * FROM challenge_invites WHERE to_user_id=? AND status='pending'", (uid,))
     elif direction == "outgoing":
-        data = [i for i in inv if i["fromUserId"] == uid and i["status"] == "pending"]
+        data = db.query("SELECT * FROM challenge_invites WHERE from_user_id=? AND status='pending'", (uid,))
     else:
-        data = inv
+        data = db.query("SELECT * FROM challenge_invites")
+
     return jsonify(data)
+
 
 @bp.post("/challenges/<int:cid>/invites")
 @auth_required
@@ -437,227 +260,115 @@ def send_invite(cid: int):
     except ValidationError as e:
         return jsonify({"error": "validation", "details": e.errors()}), 400
 
-    st = state()
-    iid = next_id(st, "challenge_invite_id")
-    inv = {
-        "id": iid,
-        "challengeId": cid,
-        "fromUserId": request.uid,
-        "toUserId": body.toUserId,
+    iid = db.insert("challenge_invites", {
+        "challenge_id": cid,
+        "from_user_id": request.uid,
+        "to_user_id": body.toUserId,
         "message": body.message,
         "status": "pending",
-        "createdAt": now_ms()
-    }
-    st["challenge_invites"].append(inv)
-    save()
-    return jsonify(inv), 201
+        "created_at": now_ms()
+    })
+
+    return jsonify({"id": iid, "status": "pending"}), 201
+
 
 @bp.post("/challenges/invites/<int:rid>/accept")
 @auth_required
 def accept_invite(rid: int):
-    st = state()
-    inv = next((i for i in st["challenge_invites"] if i["id"] == rid), None)
+    inv = db.find("challenge_invites", where="id=?", params=(rid,))
     if not inv:
         return jsonify({"error": "not_found"}), 404
 
-    cid = inv["challengeId"]
-    to_uid = inv["toUserId"]
+    cid = inv["challenge_id"]
+    to_uid = inv["to_user_id"]
 
-    # Mitglied idempotent hinzufuegen
-    already = any(m for m in st.setdefault("challenge_members", [])
-                  if m.get("challengeId") == cid and m.get("userId") == to_uid)
-    if not already:
-        st["challenge_members"].append({"challengeId": cid, "userId": to_uid})
+    exists = db.find("challenge_members", where="challenge_id=? AND user_id=?", params=(cid, to_uid))
+    if not exists:
+        db.insert("challenge_members", {"challenge_id": cid, "user_id": to_uid})
 
-    inv["status"] = "accepted"
-    save()
+    db.update("challenge_invites", {"status": "accepted"}, where="id=?", params=(rid,))
 
-    # NUR init (kein recalc)
     tz = int(request.args.get("tzOffsetMinutes", "0"))
     res = init_challenge_members(cid, tz_offset_minutes=tz)
     if "error" in res:
         return jsonify({"error": "init_failed", "details": res}), 400
 
-    save()
-    return jsonify({"ok": True, "initialized": True})
+    return jsonify({"ok": True})
+
 
 @bp.post("/challenges/invites/<int:rid>/decline")
 @auth_required
 def decline_invite(rid: int):
-    st = state()
-    inv = next((i for i in st["challenge_invites"] if i["id"] == rid), None)
+    inv = db.find("challenge_invites", where="id=?", params=(rid,))
     if not inv:
         return jsonify({"error": "not_found"}), 404
-    inv["status"] = "declined"
-    save()
+    db.update("challenge_invites", {"status": "declined"}, where="id=?", params=(rid,))
     return jsonify({"ok": True})
 
-# ------------------------------------------------------------
-# Leave
-# ------------------------------------------------------------
+# ============================================================
+# Leave Challenge
+# ============================================================
 
 @bp.post("/challenges/<int:cid>/leave")
 @auth_required
 def leave_challenge(cid: int):
-    st = state()
-    uid = request.uid
-    st["challenge_members"] = [
-        m for m in st["challenge_members"]
-        if not (m["challengeId"] == cid and m["userId"] == uid)
-    ]
-    save()
+    db.delete("challenge_members", where="challenge_id=? AND user_id=?", params=(cid, request.uid))
     return jsonify({"ok": True})
 
-# ------------------------------------------------------------
-# Stats: Recalc / Users
-# ------------------------------------------------------------
 
-@bp.route("/challenges/<int:cid>/stats/recalc", methods=["POST","GET"])
-def challenge_stats_recalc(cid: int):
-    """
-    Recalc einer einzelnen Challenge.
-    Optional: tzOffsetMinutes
-    """
-    tz = int(request.args.get("tzOffsetMinutes", "0"))
-    challenge_update_stats(cid, tz_offset_minutes=tz)
-    return Response("recalc ok", mimetype="text/plain", status=200)
+# ============================================================
+# User Challe# ============================================================
+# User Challenge Overview – automatisch via Token-User
+# ============================================================
+@bp.get("/challenges/user/overview")
+@auth_required
+def user_challenge_overview():
+    """Gibt alle Challenges zurück, an denen der eingeloggte User teilnimmt, inkl. Members mit Stats & Avatar."""
 
-@bp.route("/challenges/stats/recalc_all", methods=["POST","GET"])
-def challenges_stats_recalc_all():
-    """
-    Recalc fuer alle Challenges mit Teilnehmern.
-    Optional: tzOffsetMinutes
-    """
-    tz = int(request.args.get("tzOffsetMinutes", "0"))
-    st = state()
+    uid = request.uid  # 👈 User aus Token nehmen
 
-    challenge_ids = {
-        m.get("challengeId")
-        for m in st.get("challenge_members", [])
-        if m.get("challengeId") is not None
-    }
+    # 1️⃣ Alle Challenges, an denen der eingeloggte User teilnimmt
+    challenges = db.query("""
+        SELECT 
+            c.id AS ch_id,
+            c.title AS name,
+            c.duration_days AS dauerTage,
+            c.allowed_fails AS erlaubteFailsTage,
+            c.start_at,
+            (SELECT blocked FROM challenge_stats WHERE challenge_id=c.id AND user_id=?) AS status
+        FROM challenges c
+        JOIN challenge_members m ON c.id = m.challenge_id
+        WHERE m.user_id = ?
+    """, (uid, uid))
 
-    for cid in challenge_ids:
-        try:
-            challenge_update_stats(int(cid), tz_offset_minutes=tz)
-        except Exception:
-            # bewusst still weiter
-            pass
+    result = []
 
-    return Response("recalc ok", mimetype="text/plain", status=200)
+    # 2️⃣ Für jede Challenge alle Mitglieder mit Stats, Avatar, heute-Status etc.
+    for ch in challenges:
+        cid = ch["ch_id"]
 
-@bp.get("/challenges/<int:cid>/stats")
-def challenge_stats_users(cid: int):
-    tz_offset = int(request.args.get("tzOffsetMinutes", "0"))
-    st = state()
+        members = db.query("""
+            SELECT 
+                u.id AS user_id,
+                u.display_name,
+                u.avatar_url,
+                s.conf_count AS done_days,
+                s.fail_count AS fail_days,
+                s.streak,
+                s.neg_streak,
+                s.blocked AS status,
+                s.today_done,
+                s.today_pending
+            FROM challenge_members m
+            JOIN users u ON u.id = m.user_id
+            LEFT JOIN challenge_stats s 
+                ON s.user_id = u.id AND s.challenge_id = m.challenge_id
+            WHERE m.challenge_id = ?
+        """, (cid,))
 
-    ch = st.get("challenges", {}).get(str(cid)) or {}
-    if not ch:
-        return jsonify({"error": "not_found"}), 404
-
-    dauer_tage = ch.get("dauerTage") or ch.get("days")
-    faellige = ch.get("faelligeWochentage") or []
-    erlaubte_fails = ch.get("erlaubteFailsTage")
-
-    stats_all = st.get("challenge_stats", {}).get(str(cid), {})
-    per_user_map = stats_all.get("perUser", {})
-
-    def norm_challenge_status(val: str | None) -> str:
-        v = (val or "").lower()
-        if v in ("run",):
-            return "run"
-        if v in ("blocked", "gesperrt"):
-            return "blocked"
-        if v in ("done", "completed", "abgeschlossen"):
-            return "done"
-        return "none"
-
-    def norm_today_status(val: str | None) -> str:
-        v = (val or "").lower()
-        if v in ("n_done", "not_done"):
-            return "not_done"
-        if v in ("done", "erledigt", "success"):
-            return "done"
-        if v in ("pending",):
-            return "pending"
-        if v in ("not_pending", "open", "offen"):
-            return "not_pending"
-        return "not_pending"
-
-    per_user = []
-    for uid_key, u in per_user_map.items():
-        try:
-            uid = int(uid_key)
-        except Exception:
-            uid = int(u.get("userId", 0)) if isinstance(u, dict) else 0
-
-        conf_count = int(u.get("conf_count", u.get("confCount", 0)) or 0)
-        fail_count = int(u.get("fail_count", u.get("failCount", 0)) or 0)
-        streak     = int(u.get("streak", 0) or 0)
-        neg_streak = int(u.get("neg_streak", u.get("negStreak", 0)) or 0)
-
-        blocked_raw = u.get("blocked", u.get("challenge_status", "none"))
-        challenge_status = norm_challenge_status(blocked_raw)
-
-        last_today_raw = u.get("lastTodayState")
-        challenge_today_status = norm_today_status(last_today_raw)
-
-        status_out = norm_today_status(u.get("state"))
-
-        per_user.append({
-            "userId": uid,
-            "confCount": conf_count,
-            "failCount": fail_count,
-            "streak": streak,
-            "negStreak": neg_streak,
-            "challenge_status": challenge_status,              # "none" | "run" | "blocked" | "done"
-            "challenge_today_status": challenge_today_status,  # aus lastTodayState gemappt
-            "status": status_out
+        result.append({
+            "challenge": ch,
+            "members": members
         })
 
-    resp = {
-        "challengeId": cid,
-        "dauerTage": dauer_tage,
-        "erlaubteFailsTage": erlaubte_fails,
-        "faelligeWochentage": faellige,
-        "perUser": per_user,
-    }
-    return jsonify(resp)
-
-# ------------------------------------------------------------
-# Init
-# ------------------------------------------------------------
-
-@bp.post("/challenges/<int:cid>/init")
-def challenge_init(cid: int):
-    """
-    Setzt alle Member der Challenge auf Anfang und stellt heute pending/not_pending korrekt.
-    """
-    tz = int(request.args.get("tzOffsetMinutes", "0"))
-    res = init_challenge_members(cid, tz_offset_minutes=tz)
-    if "error" in res:
-        code = 404 if res["error"] == "challenge_not_found" else 400
-        return jsonify(res), code
-    return jsonify({"status": "initialized", "challengeId": cid})
-
-@bp.post("/challenges/init_all")
-def challenges_init_all():
-    """
-    Initialisiert alle Challenges, die mind. einen Teilnehmer haben.
-    """
-    tz = int(request.args.get("tzOffsetMinutes", "0"))
-    st = state()
-
-    challenge_ids = {
-        m.get("challengeId")
-        for m in st.get("challenge_members", [])
-        if m.get("challengeId") is not None
-    }
-
-    ok = 0
-    for cid in challenge_ids:
-        res = init_challenge_members(int(cid), tz_offset_minutes=tz)
-        if "error" not in res:
-            ok += 1
-
-    return jsonify({"status": "initialized", "count": ok})
+    return jsonify(result)

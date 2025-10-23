@@ -1,306 +1,216 @@
 from flask import Blueprint, request, jsonify
 from backend.common.auth import auth_required
-from backend.common.store import state, save, now_ms, next_id
+from backend.common.store import Database, now_ms
+from pydantic import ValidationError
 
 bp = Blueprint("feed", __name__)
+db = Database("state.db")
 
-# ---------------------------
-# Helpers
-# ---------------------------
+# ============================================================
+# Helper
+# ============================================================
 
-def _is_friend(st, uid: int, other: int) -> bool:
+def _is_friend(uid: int, other: int) -> bool:
     if uid == other:
         return True
-    for fr in st.get("friends", []):
-        if fr.get("status") == "accepted":
-            a, b = fr.get("fromUserId"), fr.get("toUserId")
-            if (a == uid and b == other) or (a == other and b == uid):
-                return True
-    for req in st.get("friend_requests", []):
-        if req.get("status") == "accepted":
-            a, b = req.get("fromUserId"), req.get("toUserId")
-            if (a == uid and b == other) or (a == other and b == uid):
-                return True
-    return False
+    row = db.query_one("""
+        SELECT 1 FROM friends 
+        WHERE status='accepted'
+          AND ((from_user_id=? AND to_user_id=?) OR (from_user_id=? AND to_user_id=?))
+    """, (uid, other, other, uid))
+    return bool(row)
 
-def _get_post(st, pid: int):
-    for p in st.get("feed_posts", []):
-        if p.get("id") == pid:
-            return p
-    return None
-
-def _ensure_lists_on_post(post: dict):
-    # likes: Liste von userIds
-    if "likes" not in post or not isinstance(post["likes"], list):
-        post["likes"] = []
-    # comments: Liste von {id, userId, text, createdAt}
-    if "comments" not in post or not isinstance(post["comments"], list):
-        post["comments"] = []
-
-def _visible_for_user(st, post: dict, uid: int) -> bool:
-    owner = post.get("userId")
+def _visible_for_user(post: dict, uid: int) -> bool:
+    owner = post["user_id"]
     vis = (post.get("visibility") or "freunde").lower()
     if owner == uid:
         return True
     if vis == "privat":
         return False
     if vis == "freunde":
-        return _is_friend(st, uid, owner)
-    if vis == "public":
-        return True
-    return False
+        return _is_friend(uid, owner)
+    return True  # "public"
 
-def _augment(post: dict, uid: int) -> dict:
-    # reiche Post um likedByMe, likesCount, commentsCount an (ohne den Original-Storage zu veraendern)
-    likes = post.get("likes") or []
-    comments = post.get("comments") or []
-    out = dict(post)
-    out["likesCount"] = len(likes)
-    out["commentsCount"] = len(comments)
-    out["likedByMe"] = uid in likes
-    return out
+def _augment_post(post: dict, uid: int) -> dict:
+    likes_count = db.scalar("SELECT COUNT(*) FROM post_likes WHERE post_id=?", (post["id"],))
+    comments_count = db.scalar("SELECT COUNT(*) FROM post_comments WHERE post_id=?", (post["id"],))
+    liked_by_me = bool(db.query_one("SELECT 1 FROM post_likes WHERE post_id=? AND user_id=?", (post["id"], uid)))
+    post["likesCount"] = likes_count
+    post["commentsCount"] = comments_count
+    post["likedByMe"] = liked_by_me
+    return post
 
-def _display_name(uid: int) -> str:
-    """Zeigt hübschen Namen für einen User."""
-    st = state()
-    u = st.get("users", {}).get(str(uid)) or {}
-    vor = (u.get("vorname") or "").strip()
-    nam = (u.get("name") or "").strip()
-    full = " ".join([p for p in [vor, nam] if p])
-    return full if full else (nam if nam else f"User {uid}")
-
-def _notify_post_owner(post: dict, actor_uid: int, text: str, kind: str):
-    """
-    Benachrichtigt den Besitzer des Posts (falls != actor) mit einem simplen Text.
-    kind: "feed_comment" | "feed_like"
-    """
-    st = state()
-    owner_uid = int(post.get("userId"))
-    if owner_uid == actor_uid:
+def _notify_post_owner(post_id: int, actor_uid: int, text: str, kind: str):
+    post = db.find("feed_posts", id=post_id)
+    if not post or post["user_id"] == actor_uid:
         return
-    notif = {
-        "id": next_id(st, "notification_id"),
-        "userId": owner_uid,
-        "text": text,                # z. B. "Max Mustermann hat deinen Beitrag kommentiert"
-        "read": False,
-        "createdAt": now_ms(),
+    db.insert("notifications", {
+        "user_id": post["user_id"],
+        "text": text,
         "type": kind,
-        "postId": int(post.get("id") or 0),
-    }
-    # Optional: Falls der Post aus einer Challenge stammt, mitgeben (falls vorhanden)
-    if "challengeId" in post and post.get("challengeId") is not None:
-        notif["challengeId"] = int(post["challengeId"])
+        "read": 0,
+        "created_at": now_ms(),
+        "post_id": post_id,
+    })
 
-    st.setdefault("notifications", []).append(notif)
-    save()
-
-# ---------------------------
-# Feed: Liste & Einzelpost
-# ---------------------------
+# ============================================================
+# Feed – Übersicht
+# ============================================================
 
 @bp.get("/feed")
 @auth_required
 def feed():
-    st = state()
     uid = request.uid
-    posts = list(st.get("feed_posts", []))
-
-    visible = [p for p in posts if _visible_for_user(st, p, uid)]
-    visible.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-
-    # augment
-    data = [_augment(p, uid) for p in visible]
+    posts = db.query("SELECT * FROM feed_posts ORDER BY created_at DESC")
+    visible = [p for p in posts if _visible_for_user(p, uid)]
+    data = [_augment_post(p, uid) for p in visible]
     return jsonify(data)
+
 
 @bp.get("/feed/<int:pid>")
 @auth_required
 def feed_one(pid: int):
-    st = state()
     uid = request.uid
-    p = _get_post(st, pid)
-    if not p:
+    post = db.find("feed_posts", id=pid)
+    if not post:
         return jsonify({"error": "not_found"}), 404
-    if not _visible_for_user(st, p, uid):
+    if not _visible_for_user(post, uid):
         return jsonify({"error": "forbidden"}), 403
-    return jsonify(_augment(p, uid))
+    return jsonify(_augment_post(post, uid))
 
-# ---------------------------
-# Profil-Posts
-# ---------------------------
+
+# ============================================================
+# Posts eines Users
+# ============================================================
 
 @bp.get("/me/posts")
 @auth_required
 def my_posts():
-    st = state()
     uid = request.uid
-    posts = [p for p in st.get("feed_posts", []) if p.get("userId") == uid]
-    posts.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-    return jsonify([_augment(p, uid) for p in posts])
+    posts = db.query("SELECT * FROM feed_posts WHERE user_id=? ORDER BY created_at DESC", (uid,))
+    return jsonify([_augment_post(p, uid) for p in posts])
+
 
 @bp.get("/users/<int:uid>/posts")
+@auth_required
 def user_posts(uid: int):
-    st = state()
-    me = uid
-    posts = [p for p in st.get("feed_posts", []) if p.get("userId") == uid]
-    visible = [p for p in posts if _visible_for_user(st, p, me)]
-    visible.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-    return jsonify([_augment(p, me) for p in visible])
+    viewer_id = request.uid
+    posts = db.query("SELECT * FROM feed_posts WHERE user_id=? ORDER BY created_at DESC", (uid,))
+    visible = [p for p in posts if _visible_for_user(p, viewer_id)]
+    return jsonify([_augment_post(p, viewer_id) for p in visible])
 
-# ---------------------------
+
+# ============================================================
 # Likes
-# ---------------------------
+# ============================================================
 
 @bp.post("/feed/<int:pid>/like")
 @auth_required
 def like_post(pid: int):
-    st = state()
     uid = request.uid
-    p = _get_post(st, pid)
-    if not p:
+    post = db.find("feed_posts", id=pid)
+    if not post:
         return jsonify({"error": "not_found"}), 404
-    if not _visible_for_user(st, p, uid):
+    if not _visible_for_user(post, uid):
         return jsonify({"error": "forbidden"}), 403
 
-    _ensure_lists_on_post(p)
-    if uid not in p["likes"]:
-        p["likes"].append(uid)
-        save()
+    exists = db.find("post_likes", where="post_id=? AND user_id=?", params=(pid, uid))
+    if not exists:
+        db.insert("post_likes", {"post_id": pid, "user_id": uid, "created_at": now_ms()})
+        _notify_post_owner(pid, uid, "jemand hat deinen Beitrag geliked", "feed_like")
 
-        # 🔔 Benachrichtigung an den Besitzer
-        actor_name = _display_name(uid)
-        _notify_post_owner(
-            p,
-            actor_uid=uid,
-            text=f"{actor_name} hat deinen Beitrag geliked",
-            kind="feed_like",
-        )
+    count = db.scalar("SELECT COUNT(*) FROM post_likes WHERE post_id=?", (pid,))
+    return jsonify({"ok": True, "likesCount": count, "likedByMe": True})
 
-    return jsonify({"ok": True, "likesCount": len(p["likes"]), "likedByMe": True})
 
 @bp.post("/feed/<int:pid>/unlike")
 @auth_required
 def unlike_post(pid: int):
-    st = state()
     uid = request.uid
-    p = _get_post(st, pid)
-    if not p:
+    post = db.find("feed_posts", id=pid)
+    if not post:
         return jsonify({"error": "not_found"}), 404
-    if not _visible_for_user(st, p, uid):
-        return jsonify({"error": "forbidden"}), 403
+    db.delete("post_likes", where="post_id=? AND user_id=?", params=(pid, uid))
+    count = db.scalar("SELECT COUNT(*) FROM post_likes WHERE post_id=?", (pid,))
+    return jsonify({"ok": True, "likesCount": count, "likedByMe": False})
 
-    _ensure_lists_on_post(p)
-    if uid in p["likes"]:
-        p["likes"] = [u for u in p["likes"] if u != uid]
-        save()
-    return jsonify({"ok": True, "likesCount": len(p["likes"]), "likedByMe": False})
 
 @bp.get("/feed/<int:pid>/likes")
 @auth_required
 def list_likes(pid: int):
-    st = state()
     uid = request.uid
-    p = _get_post(st, pid)
-    if not p:
+    post = db.find("feed_posts", id=pid)
+    if not post:
         return jsonify({"error": "not_found"}), 404
-    if not _visible_for_user(st, p, uid):
+    if not _visible_for_user(post, uid):
         return jsonify({"error": "forbidden"}), 403
 
-    _ensure_lists_on_post(p)
-    users = st.get("users", {})
-    result = []
-    for user_id in p["likes"]:
-        u = users.get(str(user_id))
-        if u:
-            result.append({
-                "id": u["id"],
-                "vorname": u.get("vorname"),
-                "name": u.get("name") or u.get("nachname") or "",
-                "avatar": u.get("avatar")
-            })
-        else:
-            result.append({"id": user_id})
-    return jsonify(result)
+    likes = db.query("""
+        SELECT u.id, u.vorname, u.name, u.avatar
+        FROM post_likes l
+        JOIN users u ON u.id = l.user_id
+        WHERE l.post_id=?
+    """, (pid,))
+    return jsonify(likes)
 
-# ---------------------------
+
+# ============================================================
 # Kommentare
-# ---------------------------
+# ============================================================
 
 @bp.get("/feed/<int:pid>/comments")
 @auth_required
 def list_comments(pid: int):
-    st = state()
     uid = request.uid
-    p = _get_post(st, pid)
-    if not p:
+    post = db.find("feed_posts", id=pid)
+    if not post:
         return jsonify({"error": "not_found"}), 404
-    if not _visible_for_user(st, p, uid):
+    if not _visible_for_user(post, uid):
         return jsonify({"error": "forbidden"}), 403
 
-    _ensure_lists_on_post(p)
-    # neueste zuerst
-    comments = sorted(p["comments"], key=lambda c: c.get("createdAt", 0), reverse=True)
+    comments = db.query("""
+        SELECT c.*, u.vorname, u.name, u.avatar
+        FROM post_comments c
+        JOIN users u ON u.id = c.user_id
+        WHERE c.post_id=?
+        ORDER BY c.created_at DESC
+    """, (pid,))
     return jsonify(comments)
+
 
 @bp.post("/feed/<int:pid>/comments")
 @auth_required
 def add_comment(pid: int):
-    st = state()
     uid = request.uid
-    p = _get_post(st, pid)
-    if not p:
+    post = db.find("feed_posts", id=pid)
+    if not post:
         return jsonify({"error": "not_found"}), 404
-    if not _visible_for_user(st, p, uid):
+    if not _visible_for_user(post, uid):
         return jsonify({"error": "forbidden"}), 403
 
-    data = (request.get_json(silent=True) or {})
+    data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
     if not text:
-        return jsonify({"error": "validation", "details": "text required"}), 400
+        return jsonify({"error": "validation", "message": "text required"}), 400
 
-    _ensure_lists_on_post(p)
-    com = {
-        "id": next_id(st, "comment_id"),
-        "userId": uid,
+    cid = db.insert("post_comments", {
+        "post_id": pid,
+        "user_id": uid,
         "text": text,
-        "createdAt": now_ms()
-    }
-    p["comments"].append(com)
-    save()
+        "created_at": now_ms(),
+    })
+    _notify_post_owner(pid, uid, "jemand hat deinen Beitrag kommentiert", "feed_comment")
+    return jsonify({"id": cid, "text": text, "user_id": uid}), 201
 
-    # 🔔 Benachrichtigung an den Besitzer
-    actor_name = _display_name(uid)
-    _notify_post_owner(
-        p,
-        actor_uid=uid,
-        text=f"{actor_name} hat deinen Beitrag kommentiert",
-        kind="feed_comment",
-    )
-
-    return jsonify(com), 201
 
 @bp.delete("/feed/<int:pid>/comments/<int:cid>")
 @auth_required
 def delete_comment(pid: int, cid: int):
-    st = state()
     uid = request.uid
-    p = _get_post(st, pid)
-    if not p:
+    comment = db.find("post_comments", where="id=? AND post_id=?", params=(cid, pid))
+    if not comment:
         return jsonify({"error": "not_found"}), 404
-    if not _visible_for_user(st, p, uid):
+    if comment["user_id"] != uid:
         return jsonify({"error": "forbidden"}), 403
-
-    _ensure_lists_on_post(p)
-    # nur eigener Kommentar loeschbar
-    found = None
-    for c in p["comments"]:
-        if c.get("id") == cid:
-            found = c
-            break
-    if not found:
-        return jsonify({"error": "not_found"}), 404
-    if found.get("userId") != uid:
-        return jsonify({"error": "forbidden"}), 403
-
-    p["comments"] = [c for c in p["comments"] if c.get("id") != cid]
-    save()
+    db.delete("post_comments", where="id=?", params=(cid,))
     return jsonify({"ok": True})

@@ -1,245 +1,164 @@
-# backend/services/stats.py
-
-from datetime import datetime, timedelta, timezone, date  # date hinzugefuegt
-from collections import defaultdict                      # <- getrennt!
+from datetime import datetime, timedelta, timezone, date
+from collections import defaultdict
 from typing import Dict, Any, List
-from backend.common.store import state, save, now_ms
+from backend.common.store import Database, now_ms
 
-# ------------------ kleine Helfer ------------------
+db = Database("state.db")
 
-def update_stats_for_challenge_today(cid: int, tz_offset_minutes: int = 0):
-    return challenge_update_stats(cid, tz_offset_minutes)
+# ------------------ Hilfsfunktionen ------------------
 
 def _to_local_date_from_ts(ts: int, tz_offset_min: int) -> date:
-    """Akzeptiert Sekunden oder Millisekunden."""
-    if ts > 10**12:  # ms
+    """Konvertiert Timestamp in lokales Datum (Sekunden oder Millisekunden)."""
+    if ts > 10**12:
         ts = ts // 1000
     tz = timezone(timedelta(minutes=tz_offset_min))
     return datetime.fromtimestamp(int(ts), tz).date()
 
-def _normalize_weekdays(faellige: List[int | str] | None) -> List[int]:
-    """
-    Normalisiert Wochentage auf Python-Index (0=Mo ... 6=So).
-    Erlaubt Strings und 1..7. 7 wird zu 0 (So->0), falls du 1=Mo ... 7=So benutzt.
-    """
-    
-    print("faellige (raw):", faellige)
-    if not faellige:
-        return []  # leer -> spaeter als 'jeder Tag' interpretiert
+def _normalize_weekdays(raw: List[int | str] | None) -> List[int]:
+    """Normalisiert Wochentage auf 0..6."""
+    if not raw:
+        return []
     out: List[int] = []
-    for x in faellige:
+    for x in raw:
         try:
             i = int(x)
+            if 0 <= i <= 6:
+                out.append(i)
+            elif 1 <= i <= 7:
+                out.append(0 if i == 7 else i - 1)
         except Exception:
             continue
-        # akzeptiere 0..6 direkt, oder 1..7 Mapping
-        if 0 <= i <= 6:
-            out.append(i)
-        elif 1 <= i <= 7:
-            out.append(0 if i == 7 else i - 1)
     return sorted(set(out))
 
 def _is_due_day(d: date, start_date: date, end_date: date, faellige: List[int]) -> bool:
-    """Ist d innerhalb des Challenge-Zeitraums und ein faelliger Wochentag?
-    Leere Liste bedeutet: JEDER Tag ist aktiv.
-    """
+    """Gibt True zurück, wenn Tag aktiv und im Zeitraum."""
     if not (start_date <= d <= end_date):
         return False
     return True if not faellige else (d.weekday() in faellige)
 
-def _next_calendar_day(d: date) -> date:
-    return d + timedelta(days=1)
-
 # ------------------ Kernfunktion ------------------
 
 def challenge_update_stats(cid: int, tz_offset_minutes: int = 0) -> Dict[str, Any]:
-    st = state()
-    ch = st.get("challenges", {}).get(str(cid))
+    """Aktualisiert Tagesstatistik einer Challenge."""
+    ch = db.query_one("SELECT * FROM challenges WHERE id=?", (cid,))
     if not ch:
         return {"error": "challenge_not_found", "challengeId": cid}
 
     start_at = ch.get("startAt")
-    dauer = ch.get("dauerTage") or ch.get("days")
-    faellige_raw = ch.get("faelligeWochentage") or []
+    dauer = ch.get("dauerTage")
     erlaubte_fails = ch.get("erlaubteFailsTage")
-
-    if not start_at:
-        return {"error": "startAt_missing", "challengeId": cid}
-    if not isinstance(faellige_raw, list):
-        return {"error": "faelligeWochentage_missing", "challengeId": cid}
-
-    faellige = _normalize_weekdays(faellige_raw)
+    faellige_raw = ch.get("faelligeWochentage")
+    faellige = _normalize_weekdays((faellige_raw or "").split(",") if isinstance(faellige_raw, str) else faellige_raw)
 
     tz = timezone(timedelta(minutes=tz_offset_minutes))
     now_dt = datetime.now(tz)
     today = now_dt.date()
-    today_iso = today.isoformat()
     yesterday = today - timedelta(days=1)
-    tomorrow = today + timedelta(days=1)
-
     start_date = _to_local_date_from_ts(int(start_at), tz_offset_minutes)
-    end_date = start_date + timedelta(days=int(dauer) - 1) if dauer else today
+    end_date = start_date + timedelta(days=int(dauer) - 1)
 
-    # Mitglieder
-    members = [m["userId"] for m in st.get("challenge_members", []) if m.get("challengeId") == cid]
+    due_today = _is_due_day(today, start_date, end_date, faellige)
+    due_yesterday = _is_due_day(yesterday, start_date, end_date, faellige)
 
-    # Logs: erledigt gestern?
-    logs = st.get("challenge_logs", {}).get(str(cid), [])
+    members = db.query("SELECT user_id FROM challenge_members WHERE challenge_id=?", (cid,))
+    member_ids = [m["user_id"] for m in members]
+
+    logs = db.query("SELECT user_id, timestamp FROM challenge_logs WHERE challenge_id=?", (cid,))
     confirmed_yesterday = defaultdict(bool)
     for l in logs:
-        uid = l.get("userId") or l.get("user_id")
-        ts = l.get("timestamp")
-        if uid is None or ts is None:
+        uid = l["user_id"]
+        ts = l["timestamp"]
+        if not ts:
             continue
-        if _to_local_date_from_ts(int(ts), tz_offset_minutes) == yesterday:
-            confirmed_yesterday[int(uid)] = True
+        log_day = _to_local_date_from_ts(int(ts), tz_offset_minutes)
+        if log_day == yesterday:
+            confirmed_yesterday[uid] = True
 
-    stats_all = st.setdefault("challenge_stats", {}).setdefault(str(cid), {})
-    per_user = stats_all.setdefault("perUser", {})
     updated_users: Dict[str, Any] = {}
 
-    # Faelligkeit fuer gestern und morgen anhand Wochentage
-    due_yesterday = _is_due_day(yesterday, start_date, end_date, faellige)
-    due_tomorrow  = _is_due_day(tomorrow,  start_date, end_date, faellige)
+    for uid in member_ids:
+        st = db.query_one("""
+            SELECT * FROM challenge_stats
+            WHERE challenge_id=? AND user_id=?
+        """, (cid, uid))
 
-    for uid in members:
-        key = str(uid)
-        pu = per_user.get(key) or {
-            "conf_count": 0,
-            "fail_count": 0,
-            "streak": 0,
-            "neg_streak": 0,
-            "blocked": "none",
-            "lastTodayState": "not_pending",
-        }
+        if not st:
+            st = {
+                "challenge_id": cid,
+                "user_id": uid,
+                "conf_count": 0,
+                "fail_count": 0,
+                "streak": 0,
+                "neg_streak": 0,
+                "blocked": "run",
+                "last_computed": None
+            }
+            db.insert("challenge_stats", st)
 
-        blocked = str(pu.get("blocked", "none"))
+        conf = int(st["conf_count"])
+        fail = int(st["fail_count"])
+        streak = int(st["streak"])
+        neg_streak = int(st["neg_streak"])
+        blocked = st["blocked"] or "run"
+        last_computed = st["last_computed"]
 
-        # Nur aktive User rechnen
-        if blocked != "run":
-            # nichts rechnen (optional koenntest du auch hier den morgigen Anzeigezustand setzen)
-            continue
+        # Nur einmal pro Tag aktualisieren
+        if last_computed != today.isoformat():
+            if blocked == "run" and due_yesterday:
+                if confirmed_yesterday.get(uid):
+                    conf += 1
+                    streak += 1
+                    neg_streak = 0
+                else:
+                    fail += 1
+                    streak = 0
+                    neg_streak += 1
 
-        # Vortag auswerten nach deiner Regel
-        prev_state = str(pu.get("state", "not_pending"))           # "pending" | "not_pending" (gestern)
-        prev_last  = str(pu.get("lastTodayState", "not_pending"))  # "done" | "not_done" | "not_pending" (gestern)
+            if erlaubte_fails is not None and fail >= int(erlaubte_fails):
+                blocked = "gesperrt"
+            if dauer is not None and conf >= int(dauer):
+                blocked = "completed"
 
-        fail_count = int(pu.get("fail_count", 0))
-        streak     = int(pu.get("streak", 0))
-        neg_streak = int(pu.get("neg_streak", 0))
+            db.update("challenge_stats", {
+                "conf_count": conf,
+                "fail_count": fail,
+                "streak": streak,
+                "neg_streak": neg_streak,
+                "blocked": blocked,
+                "last_computed": today.isoformat()
+            }, where="challenge_id=? AND user_id=?", params=(cid, uid))
 
-        if due_yesterday and prev_state == "pending" and prev_last == "not_done":
-            fail_count += 1
-            streak = 0
-            neg_streak += 1
-
-        # Sperrpruefung
-        if erlaubte_fails is not None and fail_count > int(erlaubte_fails):
-            blocked = "gesperrt"
-
-        # Morgen initialisieren (entscheidend sind die faelligen Wochentage)
-        state_next = "pending" if due_tomorrow else "not_pending"
-        today_obj = {
-            "blocked": blocked,
-            "state": "not_done" if due_tomorrow else "not_pending",
-            "pending": bool(due_tomorrow),
-            "done": False,
-        }
-
-        pu.update({
-            # KEIN conf_count-Update
-            "fail_count": fail_count,
-            "streak":     streak,
+        updated_users[uid] = {
+            "conf_count": conf,
+            "fail_count": fail,
+            "streak": streak,
             "neg_streak": neg_streak,
-            "blocked":    blocked,
+            "blocked": blocked,
+            "due_today": due_today
+        }
 
-            "state": state_next,                         # fuer den neuen Tag (morgen)
-            "today": today_obj,                          # Anzeige-Block fuer den neuen Tag (morgen)
-            "lastTodayState": "not_done" if due_tomorrow else "not_pending",
+    return {"challengeId": cid, "perUser": updated_users, "today": {"pending": due_today}}
 
-            "lastComputedAt": now_ms(),
-            "lastComputedDate": today_iso,
-        })
-
-        per_user[key] = pu
-        updated_users[key] = pu
-
-    # Aggregierter Status fuer morgen
-    if _is_due_day(tomorrow, start_date, end_date, faellige):
-        any_pending = any(u.get("today", {}).get("pending") for u in updated_users.values())
-        stats_all["today"] = {"status": "pending" if any_pending else "not_pending", "pending": bool(any_pending)}
-    else:
-        stats_all["today"] = {"status": "not_pending", "pending": False}
-
-    save()
-    return {
-        "challengeId": cid,
-        "perUser": updated_users,
-        "today": stats_all.get("today", {})
-    }
 def init_challenge_members(cid: int, tz_offset_minutes: int = 0) -> Dict[str, Any]:
-    st = state()
-    ch = st.get("challenges", {}).get(str(cid))
-    if not ch:
-        return {"error": "challenge_not_found", "challengeId": cid}
-
-    start_at = ch.get("startAt")
-    dauer = ch.get("dauerTage") or ch.get("days")
-    faellige_raw = ch.get("faelligeWochentage") or []
-    faellige = _normalize_weekdays(faellige_raw)
-
+    """Initialisiert challenge_stats-Einträge für alle Teilnehmer."""
+    members = db.query("SELECT user_id FROM challenge_members WHERE challenge_id=?", (cid,))
     tz = timezone(timedelta(minutes=tz_offset_minutes))
     today = datetime.now(tz).date()
 
-    start_date = _to_local_date_from_ts(int(start_at), tz_offset_minutes) if start_at else today
-    end_date = start_date + timedelta(days=int(dauer) - 1) if dauer else today
-
-    # alle Member holen
-    members = [m["userId"] for m in st.get("challenge_members", []) if m.get("challengeId") == cid]
-
-    stats_all = st.setdefault("challenge_stats", {}).setdefault(str(cid), {})
-    per_user = stats_all.setdefault("perUser", {})
-
-    updated_users: Dict[str, Any] = {}
-    for uid in members:
-        key = str(uid)
-
-        # bereits vorhandene Stats holen oder Basis erstellen
-        pu = per_user.get(key, {
-            "conf_count": 0,
-            "fail_count": 0,
-            "streak": 0,
-            "neg_streak": 0,
-            "blocked": "run"
-        })
-
-        # heute prüfen: ist ein faelliger Tag?
-        is_due_today = _is_due_day(today, start_date, end_date, faellige)
-        today_state = "not_done" if is_due_today else "not_pending"
-
-        # nur den heutigen Status überschreiben – Zähler bleiben erhalten
-        pu.update({
-            "blocked": "run",
-            "state": "pending" if is_due_today else "not_pending",
-            "lastTodayState": today_state,
-            "lastComputedAt": now_ms(),
-            "lastComputedDate": today.isoformat(),
-            "today": {
-                "blocked": "run",
-                "state": today_state,
-                "pending": (today_state == "not_done"),
-                "done": False
-            }
-        })
-
-        per_user[key] = pu
-        updated_users[key] = pu
-
-    # Aggregatstatus für heute
-    if _is_due_day(today, start_date, end_date, faellige):
-        stats_all["today"] = {"status": "pending", "pending": True}
-    else:
-        stats_all["today"] = {"status": "not_pending", "pending": False}
-
-    save()
-    return {"challengeId": cid, "perUser": updated_users, "today": stats_all["today"]}
+    updated = {}
+    for m in members:
+        uid = m["user_id"]
+        now = now_ms()
+        db.insert("challenge_stats", {
+        "challenge_id": cid,
+    "user_id": uid,
+    "conf_count": 0,
+    "fail_count": 0,
+    "streak": 0,
+    "neg_streak": 0,
+    "blocked": "run",
+    "last_computed": today.isoformat(),
+    "created_at": now,
+    "updated_at": now
+}, conflict_cols=["challenge_id", "user_id"])
+    return {"challengeId": cid, "perUser": updated}
