@@ -1,7 +1,7 @@
 from backend.common.store import Database, now_ms
 from typing import Optional
 
-db = Database("state.db")
+db = Database("postgresql://mauro:1234@localhost:5432/socialhabit")
 
 def add_challenge_confirm(
     challenge_id: int,

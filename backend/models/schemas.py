@@ -12,6 +12,7 @@ class RegisterBody(BaseModel):
     email: str
     password: str 
     avatar: str | None = None
+    nb_state: Optional[str] = None
 
 # Challenges
 class CreateChallengeBody(BaseModel):

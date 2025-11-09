@@ -4,7 +4,7 @@ from functools import wraps
 from backend.common.store import Database, now_ms
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
-db = Database("state.db")
+db = Database("postgresql://mauro:1234@localhost:5432/socialhabit")
 
 # ============================================================
 # HELPER
@@ -31,12 +31,8 @@ def _check_admin_credentials(email: str, password: str) -> dict | None:
     """Validiert Admin-Zugangsdaten gegen DB."""
     if not email or not password:
         return None
-    user = db.query_one("SELECT * FROM users WHERE email=? LIMIT 1", (email,))
-    if not user:
-        return None
-    if user.get("password") != _hash(password):
-        return None
-    if not user.get("is_admin"):
+    user = db.query_one("SELECT * FROM users WHERE email=%s LIMIT 1", (email,))
+    if not user or user.get("password") != _hash(password) or not user.get("is_admin"):
         return None
     return user
 
@@ -100,25 +96,22 @@ def admin_info():
 # ============================================================
 # USER MANAGEMENT
 # ============================================================
+
 @bp.post("/users/create")
 @admin_required
 def create_user():
-    """Erstellt einen neuen Benutzer (auch Admin möglich)."""
     data = request.get_json(force=True)
-
     required = ["email", "username", "display_name", "password"]
     missing = [f for f in required if not data.get(f)]
     if missing:
         return jsonify({"error": "missing_fields", "fields": missing}), 400
 
     email = data["email"].strip().lower()
-    existing = db.query_one("SELECT id FROM users WHERE email=?", (email,))
+    existing = db.query_one("SELECT id FROM users WHERE email=%s", (email,))
     if existing:
         return jsonify({"error": "email_exists"}), 400
 
-    # Passwort-Hash erzeugen
-    pw_hash = hashlib.sha256(data["password"].encode("utf-8")).hexdigest()
-
+    pw_hash = _hash(data["password"])
     uid = db.insert("users", {
         "username": data["username"],
         "display_name": data["display_name"],
@@ -129,22 +122,20 @@ def create_user():
         "created_at": now_ms(),
         "updated_at": now_ms(),
     })
-
-    user = db.query_one("SELECT * FROM users WHERE id=?", (uid,))
+    user = db.query_one("SELECT * FROM users WHERE id=%s", (uid,))
     return jsonify({"ok": True, "user": user}), 201
 
 
 @bp.get("/users")
 @admin_required
 def list_users():
-    users = db.get_all("users")
-    return jsonify({"users": users})
+    return jsonify({"users": db.get_all("users")})
 
 
 @bp.get("/users/<int:user_id>")
 @admin_required
 def get_user(user_id):
-    user = db.query_one("SELECT * FROM users WHERE id=?", (user_id,))
+    user = db.query_one("SELECT * FROM users WHERE id=%s", (user_id,))
     if not user:
         return jsonify({"error": "user_not_found"}), 404
     return jsonify(user)
@@ -155,33 +146,33 @@ def get_user(user_id):
 def update_user(user_id):
     data = request.get_json(force=True)
     data["updated_at"] = now_ms()
-    db.update("users", data, "id=?", (user_id,))
+    db.update("users", data, "id=%s", (user_id,))
     return jsonify({"ok": True, "user_id": user_id, "updated_fields": list(data.keys())})
 
 
 @bp.delete("/users/<int:user_id>")
 @admin_required
 def delete_user(user_id):
-    user = db.query_one("SELECT * FROM users WHERE id=?", (user_id,))
+    user = db.query_one("SELECT * FROM users WHERE id=%s", (user_id,))
     if not user:
         return jsonify({"error": "user_not_found"}), 404
     if user.get("is_admin"):
         return jsonify({"error": "cannot_delete_admin"}), 403
-    db.delete("users", "id=?", (user_id,))
+    db.delete("users", "id=%s", (user_id,))
     return jsonify({"ok": True, "deleted_user_id": user_id})
 
 
 @bp.post("/users/<int:user_id>/promote")
 @admin_required
 def promote_user(user_id):
-    db.update("users", {"is_admin": 1, "updated_at": now_ms()}, "id=?", (user_id,))
+    db.update("users", {"is_admin": 1, "updated_at": now_ms()}, "id=%s", (user_id,))
     return jsonify({"ok": True, "message": f"User {user_id} promoted to admin."})
 
 
 @bp.post("/users/<int:user_id>/demote")
 @admin_required
 def demote_user(user_id):
-    db.update("users", {"is_admin": 0, "updated_at": now_ms()}, "id=?", (user_id,))
+    db.update("users", {"is_admin": 0, "updated_at": now_ms()}, "id=%s", (user_id,))
     return jsonify({"ok": True, "message": f"User {user_id} demoted."})
 
 
@@ -192,19 +183,18 @@ def demote_user(user_id):
 @bp.get("/challenges")
 @admin_required
 def list_challenges():
-    data = db.get_all("challenges")
-    return jsonify({"challenges": data})
+    return jsonify({"challenges": db.get_all("challenges")})
 
 
 @bp.get("/challenges/<int:cid>")
 @admin_required
 def challenge_details(cid):
-    ch = db.query_one("SELECT * FROM challenges WHERE id=?", (cid,))
+    ch = db.query_one("SELECT * FROM challenges WHERE id=%s", (cid,))
     if not ch:
         return jsonify({"error": "not_found"}), 404
-    members = db.query("SELECT * FROM challenge_members WHERE challenge_id=?", (cid,))
-    stats = db.query("SELECT * FROM challenge_stats WHERE challenge_id=?", (cid,))
-    chat = db.query("SELECT * FROM challenge_chat WHERE challenge_id=?", (cid,))
+    members = db.query("SELECT * FROM challenge_members WHERE challenge_id=%s", (cid,))
+    stats = db.query("SELECT * FROM challenge_stats WHERE challenge_id=%s", (cid,))
+    chat = db.query("SELECT * FROM challenge_chat WHERE challenge_id=%s", (cid,))
     return jsonify({
         "challenge": ch,
         "members": members,
@@ -216,65 +206,41 @@ def challenge_details(cid):
 @bp.delete("/challenges/<int:cid>")
 @admin_required
 def delete_challenge(cid):
-    db.delete("challenges", "id=?", (cid,))
+    db.delete("challenges", "id=%s", (cid,))
     return jsonify({"ok": True, "deleted_challenge_id": cid})
 
-
-# ============================================================
-# CHALLENGE MEMBERS MANAGEMENT
-# ============================================================
 
 @bp.post("/challenges/<int:cid>/add_member")
 @admin_required
 def add_member_to_challenge(cid):
-    """Fügt einem bestehenden Challenge einen User hinzu."""
     data = request.get_json(force=True)
     uid = data.get("user_id")
-
     if not uid:
         return jsonify({"error": "missing_user_id"}), 400
 
-    # Challenge prüfen
-    challenge = db.query_one("SELECT * FROM challenges WHERE id=?", (cid,))
+    challenge = db.query_one("SELECT * FROM challenges WHERE id=%s", (cid,))
     if not challenge:
         return jsonify({"error": "challenge_not_found"}), 404
 
-    # User prüfen
-    user = db.query_one("SELECT * FROM users WHERE id=?", (uid,))
+    user = db.query_one("SELECT * FROM users WHERE id=%s", (uid,))
     if not user:
         return jsonify({"error": "user_not_found"}), 404
 
-    # Doppelte Mitgliedschaft verhindern
     exists = db.query_one(
-        "SELECT 1 FROM challenge_members WHERE challenge_id=? AND user_id=? LIMIT 1",
+        "SELECT 1 FROM challenge_members WHERE challenge_id=%s AND user_id=%s LIMIT 1",
         (cid, uid)
     )
     if exists:
         return jsonify({"error": "already_member"}), 400
 
     now = now_ms()
-
-    # Mitglied einfügen
-    db.insert("challenge_members", {
-        "challenge_id": cid,
-        "user_id": uid,
-        "joined_at": now
-    })
-
-    # Statistik initialisieren
+    db.insert("challenge_members", {"challenge_id": cid, "user_id": uid, "joined_at": now})
     db.insert("challenge_stats", {
-        "challenge_id": cid,
-        "user_id": uid,
-        "conf_count": 0,
-        "fail_count": 0,
-        "streak": 0,
-        "neg_streak": 0,
-        "blocked": "run",
-        "last_computed": None,
-        "created_at": now,
-        "updated_at": now
+        "challenge_id": cid, "user_id": uid,
+        "conf_count": 0, "fail_count": 0,
+        "streak": 0, "neg_streak": 0, "blocked": "run",
+        "last_computed": None, "created_at": now, "updated_at": now
     })
-
     return jsonify({
         "ok": True,
         "message": f"User {uid} wurde zu Challenge {cid} hinzugefügt.",
@@ -286,74 +252,32 @@ def add_member_to_challenge(cid):
 @bp.delete("/challenges/<int:cid>/remove_member/<int:uid>")
 @admin_required
 def remove_member_from_challenge(cid, uid):
-    """Entfernt ein Mitglied vollständig aus einer Challenge (inkl. Stats & Logs)."""
-
-    # Challenge prüfen
-    challenge = db.query_one("SELECT * FROM challenges WHERE id=?", (cid,))
+    challenge = db.query_one("SELECT * FROM challenges WHERE id=%s", (cid,))
     if not challenge:
         return jsonify({"error": "challenge_not_found"}), 404
 
-    # User prüfen
-    user = db.query_one("SELECT * FROM users WHERE id=?", (uid,))
+    user = db.query_one("SELECT * FROM users WHERE id=%s", (uid,))
     if not user:
         return jsonify({"error": "user_not_found"}), 404
 
-    # Mitgliedschaft prüfen
     member = db.query_one(
-        "SELECT * FROM challenge_members WHERE challenge_id=? AND user_id=?",
+        "SELECT * FROM challenge_members WHERE challenge_id=%s AND user_id=%s",
         (cid, uid)
     )
     if not member:
         return jsonify({"error": "not_member"}), 400
 
-    # Entfernen (inkl. Stats + Logs)
-    db.delete("challenge_members", "challenge_id=? AND user_id=?", (cid, uid))
-    db.delete("challenge_stats", "challenge_id=? AND user_id=?", (cid, uid))
-    db.delete("challenge_logs", "challenge_id=? AND user_id=?", (cid, uid))
-
+    db.delete("challenge_members", "challenge_id=%s AND user_id=%s", (cid, uid))
+    db.delete("challenge_stats", "challenge_id=%s AND user_id=%s", (cid, uid))
+    db.delete("challenge_logs", "challenge_id=%s AND user_id=%s", (cid, uid))
     return jsonify({
         "ok": True,
         "message": f"User {uid} wurde aus Challenge {cid} entfernt.",
         "challenge_id": cid,
         "user_id": uid
-    }), 200
-    
-    
-    
-# ============================================================
-# CHALLENGE CREATION
-# ============================================================
-
-@bp.post("/challenges/create")
-@admin_required
-def create_challenge():
-    """Erstellt eine neue Challenge über das Admin-Panel."""
-    data = request.get_json(force=True)
-
-    required = ["creator_id", "title", "start_at", "duration_days"]
-    missing = [f for f in required if not data.get(f)]
-    if missing:
-        return jsonify({"error": "missing_fields", "fields": missing}), 400
-
-    # Existiert Creator?
-    creator = db.query_one("SELECT * FROM users WHERE id=?", (data["creator_id"],))
-    if not creator:
-        return jsonify({"error": "invalid_creator", "message": "Benutzer-ID existiert nicht"}), 400
-
-    cid = db.insert("challenges", {
-        "creator_id": data["creator_id"],
-        "title": data["title"].strip(),
-        "description": (data.get("description") or "").strip(),
-        "start_at": int(data["start_at"]),
-        "duration_days": int(data["duration_days"]),
-        "allowed_fails": int(data.get("allowed_fails", 0)),
-        "due_weekdays": data.get("due_weekdays"),
-        "created_at": now_ms(),
-        "updated_at": now_ms(),
     })
 
-    challenge = db.query_one("SELECT * FROM challenges WHERE id=?", (cid,))
-    return jsonify({"ok": True, "challenge": challenge}), 201
+
 # ============================================================
 # FEED MANAGEMENT
 # ============================================================
@@ -361,112 +285,134 @@ def create_challenge():
 @bp.get("/feed/posts")
 @admin_required
 def list_posts():
-    posts = db.get_all("feed_posts")
+    posts = db.query("""
+        SELECT 
+            p.id, p.user_id, u.display_name, p.content, p.image_url,
+            p.created_at, p.updated_at,
+            COALESCE(lc.like_count, 0) AS like_count,
+            COALESCE(cc.comment_count, 0) AS comment_count
+        FROM feed_posts p
+        JOIN users u ON u.id = p.user_id
+        LEFT JOIN (
+            SELECT post_id, COUNT(*) AS like_count
+            FROM feed_likes GROUP BY post_id
+        ) lc ON lc.post_id = p.id
+        LEFT JOIN (
+            SELECT post_id, COUNT(*) AS comment_count
+            FROM feed_comments GROUP BY post_id
+        ) cc ON cc.post_id = p.id
+        ORDER BY p.created_at DESC
+    """)
     return jsonify({"posts": posts})
 
 
 @bp.get("/feed/comments")
 @admin_required
 def list_comments():
-    comments = db.get_all("feed_comments")
-    return jsonify({"comments": comments})
-
-
-@bp.get("/feed/reports")
-@admin_required
-def list_reports():
-    reports = db.query("""
-        SELECT r.*, 
-               u.email AS reporter_email,
-               p.email AS profile_email
-        FROM feed_reports r
-        LEFT JOIN users u ON r.reporter_id = u.id
-        LEFT JOIN users p ON r.profile_id = p.id
-        ORDER BY r.created_at DESC
-    """)
-    return jsonify({"reports": reports})
-
-
-@bp.post("/feed/reports/<int:rid>/status")
-@admin_required
-def update_report_status(rid):
-    data = request.get_json(force=True)
-    status = (data.get("status") or "").lower()
-    if status not in ("pending", "reviewed", "dismissed"):
-        return jsonify({"error": "invalid_status"}), 400
-    db.update("feed_reports", {"status": status, "updated_at": now_ms()}, "id=?", (rid,))
-    return jsonify({"ok": True, "report_id": rid, "status": status})
+    return jsonify({"comments": db.get_all("feed_comments")})
 
 
 @bp.delete("/feed/posts/<int:pid>")
 @admin_required
 def delete_post(pid):
-    db.delete("feed_posts", "id=?", (pid,))
+    db.delete("feed_posts", "id=%s", (pid,))
     return jsonify({"ok": True, "deleted_post_id": pid})
 
 
 @bp.delete("/feed/comments/<int:cid>")
 @admin_required
 def delete_comment(cid):
-    db.delete("feed_comments", "id=?", (cid,))
+    db.delete("feed_comments", "id=%s", (cid,))
     return jsonify({"ok": True, "deleted_comment_id": cid})
 
 
 # ============================================================
-# NOTIFICATIONS
+# REPORT MANAGEMENT
 # ============================================================
 
-@bp.get("/notifications")
+@bp.get("/reports")
 @admin_required
-def list_notifications():
-    data = db.get_all("notifications")
-    return jsonify({"notifications": data})
+def list_reports():
+    reports = db.query("""
+        SELECT
+            r.id, r.from_user_id, fu.display_name AS from_user_name,
+            r.user_id, uu.display_name AS reported_user_name,
+            r.challenge_id, c.title AS challenge_title,
+            r.message_id, r.comment_id, r.post_id,
+            r.reason, r.created_at
+        FROM reports r
+        LEFT JOIN users fu ON fu.id = r.from_user_id
+        LEFT JOIN users uu ON uu.id = r.user_id
+        LEFT JOIN challenges c ON c.id = r.challenge_id
+        ORDER BY r.created_at DESC
+    """)
+    return jsonify({"reports": reports})
 
 
-@bp.delete("/notifications/<int:nid>")
+@bp.get("/reports/<int:rid>")
 @admin_required
-def delete_notification(nid):
-    db.delete("notifications", "id=?", (nid,))
-    return jsonify({"ok": True, "deleted_notification_id": nid})
+def get_report(rid: int):
+    r = db.query_one("""
+        SELECT r.*, fu.display_name AS reporter_name
+        FROM reports r
+        LEFT JOIN users fu ON fu.id = r.from_user_id
+        WHERE r.id = %s
+    """, (rid,))
+    if not r:
+        return jsonify({"error": "not_found"}), 404
+
+    detail = None
+    target_type = None
+
+    if r.get("user_id"):
+        target_type = "user"
+        detail = db.query_one("SELECT id, display_name, email, avatar_url, created_at FROM users WHERE id=%s", (r["user_id"],))
+    elif r.get("challenge_id"):
+        target_type = "challenge"
+        detail = db.query_one("SELECT id, title, description, creator_id FROM challenges WHERE id=%s", (r["challenge_id"],))
+    elif r.get("comment_id"):
+        target_type = "comment"
+        detail = db.query_one("SELECT id, user_id, content, created_at, post_id FROM feed_comments WHERE id=%s", (r["comment_id"],))
+    elif r.get("message_id"):
+        target_type = "message"
+        detail = db.query_one("SELECT id, sender_id, receiver_id, message, created_at FROM messages WHERE id=%s", (r["message_id"],))
+    elif r.get("post_id"):
+        target_type = "post"
+        detail = db.query_one("SELECT id, user_id, content, image_url, created_at FROM feed_posts WHERE id=%s", (r["post_id"],))
+
+    if not detail:
+        r["target_type"] = "unknown"
+        r["note"] = "⚠️ Kein Zielobjekt gefunden oder gelöscht."
+    else:
+        r["target_type"] = target_type
+        r["target_detail"] = detail
+
+    return jsonify(r)
 
 
-# ============================================================
-# RAW DATABASE ACCESS
-# ============================================================
-
-@bp.post("/query")
+@bp.delete("/reports/<int:rid>")
 @admin_required
-def raw_query():
-    """Erlaubt Admin, eigene SQL-Statements auszuführen."""
-    data = request.get_json(force=True)
-    sql = (data.get("sql") or "").strip()
-    params = data.get("params") or []
-    if not sql:
-        return jsonify({"error": "missing_sql"}), 400
+def delete_report(rid: int):
+    db.delete("reports", "id=%s", (rid,))
+    return jsonify({"ok": True, "deleted_report_id": rid})
 
-    try:
-        if sql.lower().startswith("select"):
-            res = db.query(sql, tuple(params))
-            return jsonify({"ok": True, "rows": res})
-        else:
-            db.raw(sql, tuple(params))  # Korrektur: db.execute → db.raw (deine DB hat keine execute)
-            return jsonify({"ok": True, "message": "query_executed"})
-    except Exception as e:
-        return jsonify({"error": "query_failed", "details": str(e)}), 400
-    
-    
-    # ============================================================
-# CHALLENGE STATS MANAGEMENT
-# ============================================================
+
+@bp.delete("/reports/clear")
+@admin_required
+def clear_reports():
+    db.query("DELETE FROM reports")
+    return jsonify({"ok": True, "message": "All reports deleted."})
+
 
 # ============================================================
-# ALLE STATS EINER CHALLENGE
+# CHALLENGE STATS MANAGEMENT (add this block)
 # ============================================================
+
 @bp.get("/challenges/<int:cid>/stats")
 @admin_required
-def get_challenge_stats(cid: int):
-    """Zeigt alle Stats einer Challenge inkl. Userinfos."""
-    stats = db.query("""
+def admin_get_challenge_stats(cid: int):
+    """Alle Stats einer Challenge inkl. Userinfos."""
+    rows = db.query("""
         SELECT 
             s.challenge_id,
             s.user_id,
@@ -483,20 +429,17 @@ def get_challenge_stats(cid: int):
             s.updated_at
         FROM challenge_stats s
         JOIN users u ON u.id = s.user_id
-        WHERE s.challenge_id = ?
+        WHERE s.challenge_id = %s
         ORDER BY u.display_name
     """, (cid,))
-    return jsonify({"challenge_id": cid, "stats": stats})
+    return jsonify({"challenge_id": cid, "stats": rows})
 
 
-# ============================================================
-# EINZELNE STATS EINES USERS
-# ============================================================
 @bp.get("/challenges/<int:cid>/stats/<int:uid>")
 @admin_required
-def get_challenge_stat(cid: int, uid: int):
-    """Liest die Stats eines einzelnen Users in einer Challenge."""
-    stat = db.query_one("""
+def admin_get_challenge_stat(cid: int, uid: int):
+    """Einzelne Stats eines Users in einer Challenge."""
+    row = db.query_one("""
         SELECT 
             s.challenge_id,
             s.user_id,
@@ -513,46 +456,51 @@ def get_challenge_stat(cid: int, uid: int):
             s.updated_at
         FROM challenge_stats s
         JOIN users u ON u.id = s.user_id
-        WHERE s.challenge_id = ? AND s.user_id = ?
+        WHERE s.challenge_id = %s AND s.user_id = %s
     """, (cid, uid))
-    if not stat:
+    if not row:
         return jsonify({"error": "not_found"}), 404
-    return jsonify(stat)
+    return jsonify(row)
 
 
-# ============================================================
-# UPDATE EINZELNER STATISTIKFELDER
-# ============================================================
 @bp.post("/challenges/<int:cid>/stats/<int:uid>/update")
 @admin_required
-def update_challenge_stat(cid: int, uid: int):
-    """Ändert einzelne Statistikfelder eines Mitglieds."""
+def admin_update_challenge_stat(cid: int, uid: int):
+    """
+    Aendert einzelne Statistikfelder.
+    Achtung: today_done / today_pending sind BIGINT -> 0/1 setzen, keine TRUE/FALSE.
+    """
     data = request.get_json(force=True) or {}
 
-    # Zulässige Felder erweitern um die neuen Spalten
     allowed = [
         "conf_count", "fail_count", "streak",
         "neg_streak", "blocked",
         "today_done", "today_pending"
     ]
 
-    # Nur erlaubte Felder übernehmen
     updates = {k: v for k, v in data.items() if k in allowed}
     if not updates:
         return jsonify({"error": "no_valid_fields", "allowed": allowed}), 400
 
+    # Normiere boolean-artige Felder auf 0/1 (int), weil Spalten BIGINT sind
+    for k in ("today_done", "today_pending"):
+        if k in updates:
+            v = updates[k]
+            # akzeptiere True/False, "true"/"false", 1/0
+            if isinstance(v, str):
+                v = v.strip().lower() in ("1", "true", "yes", "y")
+            updates[k] = 1 if bool(v) else 0
+
     updates["updated_at"] = now_ms()
 
-    # Prüfen, ob Datensatz existiert
     exists = db.query_one("""
         SELECT id FROM challenge_stats
-        WHERE challenge_id=? AND user_id=?
+        WHERE challenge_id=%s AND user_id=%s
     """, (cid, uid))
     if not exists:
         return jsonify({"error": "not_found"}), 404
 
-    # Update ausführen
-    db.update("challenge_stats", updates, "challenge_id=? AND user_id=?", (cid, uid))
+    db.update("challenge_stats", updates, "challenge_id=%s AND user_id=%s", (cid, uid))
 
     updated = db.query_one("""
         SELECT 
@@ -570,7 +518,7 @@ def update_challenge_stat(cid: int, uid: int):
             s.updated_at
         FROM challenge_stats s
         JOIN users u ON u.id = s.user_id
-        WHERE s.challenge_id=? AND s.user_id=?
+        WHERE s.challenge_id=%s AND s.user_id=%s
     """, (cid, uid))
 
     return jsonify({"ok": True, "updated": updated})

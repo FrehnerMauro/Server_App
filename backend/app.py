@@ -1,15 +1,18 @@
+from backend.blueprints.admin import admin
 from flask import Flask
 from flask_cors import CORS
 
 # Blueprints
-from backend.blueprints import (
+from backend.blueprints.user import (
     auth_routes,
     users,
     friends,
     challenges,
     feed,
     notifications,
-    admin
+    report,
+    settings,
+    stats
 )
 
 def create_app():
@@ -31,8 +34,12 @@ def create_app():
     app.register_blueprint(feed.bp)
     app.register_blueprint(notifications.bp)
     app.register_blueprint(admin.bp)
+    app.register_blueprint(report.bp)
+    app.register_blueprint(settings.bp)
+    app.register_blueprint(stats.bp)
 
-    # Optional: Healthcheck
+
+
     @app.get("/health")
     def health():
         return {"status": "ok"}

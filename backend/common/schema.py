@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS feed_posts (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     image_url TEXT,
+    visibility TEXT DEFAULT 'freunde',  -- ⬅️ HIER ERWEITERT
     created_at INTEGER NOT NULL,
     updated_at INTEGER
 );

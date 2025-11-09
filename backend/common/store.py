@@ -1,151 +1,158 @@
-import sqlite3
-import threading
+import os
 import time
 import hashlib
 from typing import Any, Dict, List, Optional, Tuple
-from backend.common.schema import SCHEMA  # dein globales Schema
 
+import psycopg2
+import psycopg2.extras
 
 # ------------------------------------------------------------
-# Zeit- und ID-Helfer
+# Zeit-Helper
 # ------------------------------------------------------------
-
 def now_ms() -> int:
-    """Aktuelle Zeit in Millisekunden"""
     return int(time.time() * 1000)
 
+# ------------------------------------------------------------
+# DSN / Verbindung
+# ------------------------------------------------------------
+def _resolve_dsn(passed: Optional[str]) -> str:
+    # Nur Postgres. Nimmt erst "passed", dann $DB_DSN, sonst Default.
+    if passed and passed.startswith("postgresql://"):
+        return passed
+    env_dsn = os.getenv("DB_DSN")
+    if env_dsn and env_dsn.startswith("postgresql://"):
+        return env_dsn
+    return "postgresql://mauro:1234@localhost:5432/socialhabit"
 
-_id_lock = threading.Lock()
+def _connect(dsn: str):
+    return psycopg2.connect(dsn, cursor_factory=psycopg2.extras.RealDictCursor)
 
-def next_id(kind: str) -> int:
-    """Gibt eine eindeutige fortlaufende ID für eine Kategorie zurück"""
-    with _id_lock:
-        with _connect("state.db") as con:
-            con.execute("""
-                CREATE TABLE IF NOT EXISTS next_ids (
-                    name TEXT PRIMARY KEY,
-                    val INTEGER DEFAULT 0
-                )
-            """)
-            cur = con.execute("SELECT val FROM next_ids WHERE name=?", (kind,))
-            row = cur.fetchone()
-            if row is None:
-                new_val = 1
-                con.execute("INSERT INTO next_ids (name, val) VALUES (?, ?)", (kind, new_val))
-            else:
-                new_val = row["val"] + 1
-                con.execute("UPDATE next_ids SET val=? WHERE name=?", (new_val, kind))
+# ------------------------------------------------------------
+# DB-API (nur Postgres)
+# ------------------------------------------------------------
+class Database:
+    def __init__(self, dsn: Optional[str] = None):
+        self.dsn = _resolve_dsn(dsn)
+        # kein SCHEMA-Init: DB wurde migriert
+
+    # Transaktion
+    def begin_transaction(self):
+        con = _connect(self.dsn)
+        cur = con.cursor()
+        return con, cur
+
+    def commit(self, con):
+        if con:
+            con.commit()
+            con.close()
+
+    def rollback(self, con):
+        if con:
+            con.rollback()
+            con.close()
+
+    # Fortlaufende IDs (pro "kind"), rein in PG
+    def _ensure_next_ids(self, cur):
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS next_ids (
+                name TEXT PRIMARY KEY,
+                val BIGINT NOT NULL DEFAULT 0
+            );
+        """)
+
+    def next_id(self, kind: str) -> int:
+        with _connect(self.dsn) as con:
+            with con.cursor() as cur:
+                self._ensure_next_ids(cur)
+                cur.execute("SELECT val FROM next_ids WHERE name=%s FOR UPDATE", (kind,))
+                row = cur.fetchone()
+                if row is None:
+                    new_val = 1
+                    cur.execute("INSERT INTO next_ids (name, val) VALUES (%s, %s)", (kind, new_val))
+                else:
+                    new_val = int(row["val"]) + 1
+                    cur.execute("UPDATE next_ids SET val=%s WHERE name=%s", (new_val, kind))
             con.commit()
             return new_val
 
-
-# ------------------------------------------------------------
-# Verbindung
-# ------------------------------------------------------------
-
-def _connect(db_path: str = "state.db") -> sqlite3.Connection:
-    con = sqlite3.connect(db_path, check_same_thread=False)
-    con.row_factory = sqlite3.Row
-    con.execute("PRAGMA foreign_keys = ON;")
-    con.execute("PRAGMA journal_mode = WAL;")
-    return con
-
-
-# ------------------------------------------------------------
-# Hauptklasse
-# ------------------------------------------------------------
-
-class Database:
-    def __init__(self, db_path: str = "state.db"):
-        self.db_path = db_path
-        self._init_schema()
-
-    def _init_schema(self):
-        """Initialisiert DB mit SCHEMA falls leer"""
-        with _connect(self.db_path) as con:
-            con.executescript(SCHEMA)
-            con.commit()
-
-    # --------------------------------------------------------
     # CRUD
-    # --------------------------------------------------------
-    def insert(self, table: str, data: Dict[str, Any]) -> int:
+    def insert(self, table: str, data: Dict[str, Any]) -> Optional[int]:
         keys = ", ".join(data.keys())
-        placeholders = ", ".join(["?"] * len(data))
-        sql = f"INSERT INTO {table} ({keys}) VALUES ({placeholders})"
-        with _connect(self.db_path) as con:
-            cur = con.execute(sql, list(data.values()))
+        placeholders = ", ".join(["%s"] * len(data))
+        sql = f"INSERT INTO {table} ({keys}) VALUES ({placeholders}) RETURNING id"
+        with _connect(self.dsn) as con:
+            with con.cursor() as cur:
+                cur.execute(sql, list(data.values()))
+                row = cur.fetchone()
             con.commit()
-            return cur.lastrowid
+            return row["id"] if row and "id" in row else None
 
     def update(self, table: str, data: Dict[str, Any], where: str, params: tuple):
-        keys = ", ".join([f"{k}=?" for k in data.keys()])
-        sql = f"UPDATE {table} SET {keys} WHERE {where}"
-        with _connect(self.db_path) as con:
-            con.execute(sql, tuple(data.values()) + params)
+        sets = ", ".join([f"{k}=%s" for k in data.keys()])
+        sql = f"UPDATE {table} SET {sets} WHERE {where}"
+        with _connect(self.dsn) as con:
+            with con.cursor() as cur:
+                cur.execute(sql, tuple(data.values()) + params)
             con.commit()
 
     def delete(self, table: str, where: str, params: tuple):
         sql = f"DELETE FROM {table} WHERE {where}"
-        with _connect(self.db_path) as con:
-            con.execute(sql, params)
+        with _connect(self.dsn) as con:
+            with con.cursor() as cur:
+                cur.execute(sql, params)
             con.commit()
 
     def get_all(self, table: str) -> List[Dict[str, Any]]:
-        with _connect(self.db_path) as con:
-            cur = con.execute(f"SELECT * FROM {table}")
-            return [dict(row) for row in cur.fetchall()]
+        with _connect(self.dsn) as con:
+            with con.cursor() as cur:
+                cur.execute(f"SELECT * FROM {table}")
+                return cur.fetchall()
 
-    # --------------------------------------------------------
-    # find
-    # --------------------------------------------------------
-    def find(self, table: str, where: Optional[str] = None, params: Optional[tuple] = None, **kwargs):
-        if kwargs:
-            where = " AND ".join([f"{k}=?" for k in kwargs.keys()])
-            params = tuple(kwargs.values())
-        if not where:
-            raise ValueError("Missing WHERE for .find()")
-        with _connect(self.db_path) as con:
-            cur = con.execute(f"SELECT * FROM {table} WHERE {where} LIMIT 1", params)
-            row = cur.fetchone()
-            return dict(row) if row else None
-
-    # --------------------------------------------------------
     # Query
-    # --------------------------------------------------------
     def query(self, sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
-        with _connect(self.db_path) as con:
-            cur = con.execute(sql, params)
-            return [dict(row) for row in cur.fetchall()]
+        with _connect(self.dsn) as con:
+            with con.cursor() as cur:
+                cur.execute(sql, params)
+                return cur.fetchall()
 
     def query_one(self, sql: str, params: tuple = ()) -> Optional[Dict[str, Any]]:
-        with _connect(self.db_path) as con:
-            cur = con.execute(sql, params)
-            row = cur.fetchone()
-            return dict(row) if row else None
+        with _connect(self.dsn) as con:
+            with con.cursor() as cur:
+                cur.execute(sql, params)
+                row = cur.fetchone()
+                return dict(row) if row else None
 
-    # --------------------------------------------------------
-    # Raw SQL (für Admin)
-    # --------------------------------------------------------
+    # Utilities
     def raw(self, sql: str, params: tuple = ()):
-        """Führt beliebige SQL-Statements aus"""
-        with _connect(self.db_path) as con:
-            cur = con.execute(sql, params)
+        with _connect(self.dsn) as con:
+            with con.cursor() as cur:
+                cur.execute(sql, params)
             con.commit()
-            return cur.rowcount
 
-    # --------------------------------------------------------
-    # Hilfsmethoden
-    # --------------------------------------------------------
     def list_tables(self) -> List[str]:
-        """Listet alle Tabellen in der DB"""
-        with _connect(self.db_path) as con:
-            cur = con.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
-            return [r["name"] for r in cur.fetchall()]
+        with _connect(self.dsn) as con:
+            with con.cursor() as cur:
+                cur.execute("SELECT tablename FROM pg_tables WHERE schemaname='public';")
+                return [r["tablename"] for r in cur.fetchall()]
+
+    def scalar(self, sql: str, params: tuple = ()):
+        row = self.query_one(sql, params)
+        if not row:
+            return None
+        return next(iter(row.values()))
+    
 
 
 # ------------------------------------------------------------
-# Hilfsfunktion Passwort-Hash
+# Passwort-Hash
 # ------------------------------------------------------------
 def hash_pw(pw: str) -> str:
     return hashlib.sha256((pw or "").encode("utf-8")).hexdigest()
+
+# ------------------------------------------------------------
+# Kompat-Wrappers (falls alter Code next_id als freie Funktion importiert)
+# ------------------------------------------------------------
+_db_singleton = Database()  # nutzt DB_DSN oder Default
+
+def next_id(kind: str) -> int:
+    return _db_singleton.next_id(kind)

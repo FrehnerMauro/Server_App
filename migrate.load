@@ -1,0 +1,13 @@
+LOAD DATABASE
+     FROM sqlite:///Users/maurofrehner/Desktop/GitHub/Server_App/backend/state.db
+     INTO postgresql://mauro:1234@localhost/socialhabit
+
+ WITH include no drop,
+      create tables,
+      create indexes,
+      reset sequences
+
+ SET work_mem to '16MB',
+     maintenance_work_mem to '512MB',
+     search_path to 'public';
+

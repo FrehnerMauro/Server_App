@@ -3,7 +3,7 @@ from flask import request, jsonify
 from backend.common.store import Database
 
 # Globale DB-Instanz
-db = Database("state.db")
+db = Database("postgresql://mauro:1234@localhost:5432/socialhabit")
 
 def auth_required(fn):
     """
@@ -20,7 +20,7 @@ def auth_required(fn):
         if not token:
             return jsonify({"error": "empty_token"}), 401
 
-        row = db.query_one("SELECT user_id FROM auth_tokens WHERE token=?", (token,))
+        row = db.query_one("SELECT user_id FROM auth_tokens WHERE token= %s", (token,))
         if not row:
             return jsonify({"error": "invalid_token"}), 401
 
