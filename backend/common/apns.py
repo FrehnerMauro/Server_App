@@ -70,24 +70,31 @@ def send_apns(
     body: str = "Test-Nachricht von Mauro 🚀",
     sound: str = "default",
     badge: int = 1,
-    environment: str = "prod"
+    environment: str = "prod",
+    target_type: str | None = None,   # z. B. "chat", "challenge", "feed_post"
+    target_id: int | None = None      # z. B. 42
 ) -> bool:
     """
-    Sendet eine Push Notification via Apple APNs (Zertifikatsauth).
-    - environment: 'prod' oder 'sandbox'
-    Gibt True bei Erfolg, False bei Fehler.
+    Sendet eine Push Notification via Apple APNs (Zertifikatsauth) inkl. Custom Data
     """
     debug_log("START", f"Sende APNs an Token={device_token[:10]}… ({environment})")
 
     try:
         client = get_client(environment)
 
-        # Payload
         alert = PayloadAlert(title=title, body=body)
-        payload = Payload(alert=alert, sound=sound, badge=badge)
+
+        # Custom-Data an die App mitsenden (→ wird im iOS-Delegate abgefangen)
+        custom_data = {}
+        if target_type:
+            custom_data["target_type"] = target_type
+        if target_id:
+            custom_data["target_id"] = target_id
+
+        payload = Payload(alert=alert, sound=sound, badge=badge, custom=custom_data)
+
         debug_log("PAYLOAD", payload.dict())
 
-        # Senden
         response = client.send_notification(device_token, payload, topic=BUNDLE_ID)
         debug_log("RESPONSE", str(response))
         print(f"✅ Push gesendet an {device_token[:10]}… ({environment.upper()})")
