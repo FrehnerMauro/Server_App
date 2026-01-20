@@ -17,6 +17,9 @@ from backend.blueprints.user.stats import init_challenge_members
 bp = Blueprint("challenges", __name__)
 db = Database("postgresql://mauro:1234@localhost:5432/socialhabit")
 DEBUG_INVITES = True  # ⬅️ True = Debug aktiv, False = Debug aus
+DEBUG_CHAT = True  # ⬅️ True = Debug für Chat aktiv
+DEBUG_CONFIRM = True  # ⬅️ True = Debug für Confirmations aktiv
+DEBUG_OVERVIEW = True  # ⬅️ True = Debug für Overview aktiv
 
 
 # ============================================================
@@ -106,7 +109,6 @@ def create_challenge():
         "image_url": None,
         "created_at": now
     })
-    init_challenge_members(cid, tz_offset_minutes=0)
 
     return jsonify({"id": cid, "initialized": True}), 201
 
@@ -464,6 +466,9 @@ def leave_challenge(cid: int):
 def user_challenge_overview():
     uid = request.uid
 
+    if DEBUG_OVERVIEW:
+        print(f"\n🔵 [DEBUG] /challenges/user/overview aufgerufen von User {uid}")
+
     challenges = db.query("""
         SELECT 
             c.id AS ch_id,
@@ -471,7 +476,15 @@ def user_challenge_overview():
             c.duration_days AS dauerTage,
             c.allowed_fails AS erlaubteFailsTage,
             c.start_at,
-            (SELECT blocked FROM challenge_stats WHERE challenge_id=c.id AND user_id=%s) AS status
+            (
+                SELECT blocked
+                FROM challenge_stats
+                WHERE id = (
+                    SELECT MAX(id)
+                    FROM challenge_stats
+                    WHERE challenge_id=c.id AND user_id=%s
+                )
+            ) AS status
         FROM challenges c
         JOIN challenge_members m ON c.id = m.challenge_id
         WHERE m.user_id = %s
@@ -566,6 +579,9 @@ def get_challenge_info(cid: int):
 def get_challenge_chat_full(cid: int):
     uid = request.uid
 
+    if DEBUG_CHAT:
+        print(f"\n💬 [DEBUG] /challenges/{cid}/chat/full aufgerufen von User {uid}")
+
     ch = db.query_one("SELECT * FROM challenges WHERE id=%s", (cid,))
     if not ch:
         return jsonify({"error": "not_found"}), 404
@@ -588,7 +604,7 @@ def get_challenge_chat_full(cid: int):
             c.id,
             c.challenge_id,
             c.user_id,
-            c.message,
+            c.message AS text,
             c.image_url,
             c.created_at
         FROM challenge_chat c
@@ -596,12 +612,26 @@ def get_challenge_chat_full(cid: int):
         ORDER BY c.created_at ASC
     """, (cid,))
 
-    return jsonify({
+    if DEBUG_CHAT:
+        print(f"[DEBUG] Challenge gefunden: {ch.get('title') if ch else 'None'}")
+        print(f"[DEBUG] Mitglieder: {len(members)}")
+        for m in members:
+            print(f"  - {m}")
+        print(f"[DEBUG] Chat-Messages: {len(chat)}")
+        for msg in chat:
+            print(f"  - {msg}")
+
+    response_data = {
         "challenge_id": cid,
         "current_user_id": uid,
         "members": members,
         "chat": chat
-    })
+    }
+    
+    if DEBUG_CHAT:
+        print(f"[DEBUG] Sende Response mit {len(response_data['members'])} members, {len(response_data['chat'])} messages")
+
+    return jsonify(response_data)
 
 
 # ============================================================
@@ -611,7 +641,11 @@ def get_challenge_chat_full(cid: int):
 @auth_required
 def post_challenge_message(cid: int):
     data = request.get_json(force=True) or {}
-    message = (data.get("message") or "").strip()
+    message = (data.get("message") or data.get("text") or "").strip()
+
+    if DEBUG_CHAT:
+        print(f"\n💬 [DEBUG] /challenges/{cid}/chat/message von User {request.uid}")
+        print(f"[DEBUG] message: {message}")
 
     # Challenge prüfen
     ch = db.query_one("SELECT id, title FROM challenges WHERE id=%s", (cid,))
@@ -688,7 +722,7 @@ def post_challenge_message(cid: int):
         "id": msg_id,
         "challenge_id": cid,
         "user_id": request.uid,
-        "message": message if message != "" else None,
+        "text": message if message != "" else None,
         "image_url": None,
         "created_at": now
     }), 201
@@ -703,7 +737,7 @@ def post_challenge_message(cid: int):
 def post_challenge_image(cid: int):
     data = request.get_json(force=True) or {}
     image_url = (data.get("image_url") or "").strip()
-    caption = (data.get("caption") or "").strip()
+    caption = (data.get("caption") or data.get("text") or "").strip()
 
     if not image_url:
         return jsonify({"error": "missing_image_url"}), 400
@@ -725,7 +759,7 @@ def post_challenge_image(cid: int):
         "id": msg_id,
         "challenge_id": cid,
         "user_id": request.uid,
-        "message": caption,
+        "text": caption or None,
         "image_url": image_url,
         "created_at": now
     }), 201
@@ -738,6 +772,9 @@ def challenge_confirm(cid: int):
     Fuegt eine Challenge-Bestaetigung hinzu und informiert andere Mitglieder via APNs + Notification-Eintrag.
     Verhindert doppelte Bestaetigungen am selben Tag.
     """
+    if DEBUG_CONFIRM:
+        print(f"\n✅ [DEBUG] /challenges/{cid}/confirm von User {request.uid}")
+
     ch = db.query_one("SELECT id, title, duration_days FROM challenges WHERE id=%s", (cid,))
     if not ch:
         return jsonify({"error": "not_found"}), 404
@@ -770,8 +807,8 @@ def challenge_confirm(cid: int):
     try:
         # 1️⃣ Mitgliedschaft sicherstellen
         cur.execute("""
-            INSERT INTO challenge_members (challenge_id, user_id, joined_at)
-            VALUES (%s, %s, %s)
+            INSERT INTO challenge_members (challenge_id, user_id, status, joined_at)
+            VALUES (%s, %s, 'accepted', %s)
             ON CONFLICT (challenge_id, user_id) DO NOTHING
         """, (cid, uid, now))
 

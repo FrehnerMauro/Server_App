@@ -108,6 +108,10 @@ class Database:
                 cur.execute(f"SELECT * FROM {table}")
                 return cur.fetchall()
 
+    def find(self, table: str, where: str, params: tuple = ()) -> Optional[Dict[str, Any]]:
+        sql = f"SELECT * FROM {table} WHERE {where} LIMIT 1"
+        return self.query_one(sql, params)
+
     # Query
     def query(self, sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
         with _connect(self.dsn) as con:

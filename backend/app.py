@@ -18,6 +18,7 @@ from backend.blueprints.user import (
 def create_app():
     """Erzeugt die Flask-App-Instanz."""
     app = Flask(__name__)
+    app.config['DEBUG'] = True
 
     # ----------------------------------------------------
     # CORS aktivieren (für Frontend-Kommunikation)

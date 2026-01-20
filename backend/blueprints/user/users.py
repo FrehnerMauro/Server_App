@@ -61,7 +61,7 @@ def get_my_profile():
     for p in posts:
         pid = p["id"]
         p["comments"] = db.query("""
-            SELECT c.id, c.comment, c.created_at, u.display_name, u.avatar_url
+            SELECT c.id, c.content AS comment, c.created_at, u.display_name, u.avatar_url
             FROM feed_comments c
             JOIN users u ON u.id = c.user_id
             WHERE c.post_id = %s
