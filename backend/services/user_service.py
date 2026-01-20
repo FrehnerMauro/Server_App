@@ -9,7 +9,6 @@ from backend.core.exceptions import (
     ValidationError,
 )
 from backend.core.logging import get_logger
-from backend.domain.models import User
 from backend.repositories import UserRepository
 from backend.schemas import (
     UserResponse,

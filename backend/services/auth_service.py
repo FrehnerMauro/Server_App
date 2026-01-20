@@ -17,6 +17,7 @@ from backend.core.logging import get_logger
 from backend.domain.models import User, AuthToken, UserRole
 from backend.repositories import UserRepository, AuthTokenRepository
 from backend.schemas import LoginRequest, RegisterRequest, AuthResponse, UserResponse
+from backend.utils.avatar_generator import get_or_create_avatar
 
 logger = get_logger(__name__)
 
@@ -95,19 +96,34 @@ class AuthService:
         # Erstelle User
         now = int(datetime.utcnow().timestamp() * 1000)
         username = f"{request.vorname.lower()}.{request.name.lower()}"
+        display_name = f"{request.vorname} {request.name}"
+        
+        # Generiere Avatar mit Anfangsbuchstaben falls nicht vorhanden
+        avatar_url = get_or_create_avatar(display_name, request.avatar)
+        
+        logger.info(f"🎨 Avatar generiert für {display_name}: {avatar_url[:60]}...")
         
         user = self.user_repo.create({
             "username": username,
-            "display_name": f"{request.vorname} {request.name}",
+            "display_name": display_name,
             "email": request.email,
-            "avatar_url": request.avatar,
-            "password": self.hash_password(request.password),
-            "is_admin": 0,
-            "role": UserRole.USER.value,
-            "is_active": True,
+            "avatar_url": avatar_url,
             "created_at": now,
             "updated_at": now
         })
+        
+        logger.info(f"✅ User erstellt: ID={user.id}, avatar_url={'VORHANDEN' if user.avatar_url else 'NULL'}")
+        
+        # Speichere Passwort in auth Tabelle
+        from backend.core.database import get_db_cursor
+        try:
+            with get_db_cursor(commit=True) as cursor:
+                cursor.execute(
+                    "INSERT INTO auth (user_id, password_hash) VALUES (%s, %s)",
+                    (user.id, self.hash_password(request.password))
+                )
+        except Exception as e:
+            logger.warning(f"Could not save password to auth table: {e}")
         
         # Erstelle Token
         token_str = self.generate_token(user.id)

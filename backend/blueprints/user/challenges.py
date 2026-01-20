@@ -514,6 +514,13 @@ def user_challenge_overview():
             WHERE m.challenge_id = %s
         """, (cid,))
 
+        # Generiere fehlende Avatare
+        from backend.utils.avatar_generator import get_or_create_avatar
+        for member in members:
+            if not member.get("avatar_url"):
+                # Generiere Avatar wenn nicht vorhanden
+                member["avatar_url"] = get_or_create_avatar(member.get("display_name"))
+
         # 🔄 Aktuellen User immer an den Anfang stellen
         members.sort(key=lambda x: 0 if x["user_id"] == uid else 1)
 

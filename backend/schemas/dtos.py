@@ -4,7 +4,7 @@ Verwendet Pydantic V2 für Validierung.
 """
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, computed_field
 
 
 # ============================================================
@@ -118,6 +118,24 @@ class ChallengeMemberResponse(BaseModel):
     user: Optional[UserResponse] = None
     role: str
     joined_at: datetime
+    
+    @computed_field
+    @property
+    def avatar_url(self) -> Optional[str]:
+        """Extrahiert avatar_url aus dem nested user Objekt."""
+        return self.user.avatar_url if self.user else None
+    
+    @computed_field
+    @property
+    def display_name(self) -> Optional[str]:
+        """Extrahiert display_name aus dem nested user Objekt."""
+        return self.user.display_name if self.user else None
+    
+    @computed_field
+    @property
+    def avatar(self) -> Optional[str]:
+        """Alias für avatar_url (Frontend Compatibility)."""
+        return self.user.avatar_url if self.user else None
     
     model_config = ConfigDict(from_attributes=True)
 

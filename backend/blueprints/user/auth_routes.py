@@ -3,6 +3,7 @@ from pydantic import ValidationError
 from backend.models.schemas import RegisterBody, LoginBody
 from backend.common.store import Database, now_ms
 from backend.common.auth import auth_required
+from backend.utils.avatar_generator import get_or_create_avatar
 import hashlib, base64
 
 bp = Blueprint("auth", __name__)
@@ -56,11 +57,14 @@ def register():
         }), 400
 
     # Benutzer eintragen
+    display_name = f"{body.vorname} {body.name}"
+    avatar_url = get_or_create_avatar(display_name, body.avatar)
+    
     uid = db.insert("users", {
         "username": f"{body.vorname.lower()}.{body.name.lower()}",
-        "display_name": f"{body.vorname} {body.name}",
+        "display_name": display_name,
         "email": body.email,
-        "avatar_url": body.avatar,
+        "avatar_url": avatar_url,
         "password": _hash(body.password),
         "is_admin": 0,
         "nb_state": nb_state,
