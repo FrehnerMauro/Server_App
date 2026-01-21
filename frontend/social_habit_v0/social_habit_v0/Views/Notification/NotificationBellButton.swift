@@ -1,11 +1,10 @@
 import SwiftUI
 
 struct NotificationBellButton: View {
+    @EnvironmentObject private var theme: ThemeManager
     @Binding var count: Int
     var action: () -> Void
-    private let primaryAccent = Color(red: 0.0, green: 0.9, blue: 1.0)
-
-
+    private var palette: Theme { theme.theme }
 
     var body: some View {
 
@@ -13,7 +12,7 @@ struct NotificationBellButton: View {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: "bell.fill")
                     .font(.title3)
-                    .foregroundColor(primaryAccent)
+                    .foregroundColor(palette.accent)
 
                 
 

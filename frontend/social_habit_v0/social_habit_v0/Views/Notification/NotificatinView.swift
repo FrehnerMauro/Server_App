@@ -70,6 +70,7 @@ struct NotificationsView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(palette.background, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .id(theme.currentPreset)
             .task {
                 await loadNotifications()
             }

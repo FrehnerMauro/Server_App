@@ -40,7 +40,7 @@ struct FeedCommentDTO: Codable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id
-        case text = "comment"
+        case text = "content"
         case createdAt = "created_at"
         case userId = "user_id"
         case displayName = "display_name"

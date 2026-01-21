@@ -13,7 +13,7 @@ struct ProfileView: View {
     @State private var showSettings = false
     @State private var showDeleteAlert = false
     @State private var postToDelete: Int? = nil
-    @State private var likedPosts: Set<Int> = []
+    @State private var likedPosts: [Int: Bool] = [:]  // Tracking von lokalen Like-Änderungen
     @State private var expandedPostId: Int? = nil   // 👈 Für Inline-Kommentare
 
     private var Api_Profiles: api_profiles { app.Api_Profiles }
@@ -67,6 +67,7 @@ struct ProfileView: View {
         } message: {
             Text("Willst du diesen Beitrag wirklich löschen?")
         }
+        .id(theme.currentPreset)
     }
 
     // MARK: - Header
@@ -193,7 +194,9 @@ struct ProfileView: View {
 
     // MARK: - Einzelner Post
     private func profilePostCard(_ p: ProfilePost) -> some View {
-        let isLiked = likedPosts.contains(p.id)
+        // Verwende den lokalen Override, falls vorhanden, sonst Server-Wert
+        let isLiked = likedPosts[p.id] ?? (p.liked_by_me ?? false)
+        let currentLikeCount = p.like_count + (isLiked != (p.liked_by_me ?? false) ? (isLiked ? 1 : -1) : 0)
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -237,7 +240,7 @@ struct ProfileView: View {
                     HStack {
                         Image(systemName: isLiked ? "heart.fill" : "heart")
                             .foregroundColor(isLiked ? palette.accent : palette.textPrimary)
-                        Text("\(p.like_count + (isLiked ? 1 : 0))")
+                        Text("\(currentLikeCount)")
                             .font(.subheadline.weight(.semibold))
                             .foregroundColor(palette.textPrimary)
                     }
@@ -289,16 +292,25 @@ struct ProfileView: View {
 
     // MARK: - Aktionen
     private func toggleLike(_ post: ProfilePost) async {
+        let currentLikedState = likedPosts[post.id] ?? (post.liked_by_me ?? false)
+        let newLikedState = !currentLikedState
+        
+        // Optimistisches Update
+        await MainActor.run {
+            likedPosts[post.id] = newLikedState
+        }
+        
         do {
-            if likedPosts.contains(post.id) {
-                try await Api_Feed.feedUnlike(postId: post.id)
-                await MainActor.run { likedPosts.remove(post.id) }
-            } else {
+            if newLikedState {
                 try await Api_Feed.feedLike(postId: post.id)
-                await MainActor.run { likedPosts.insert(post.id) }
+            } else {
+                try await Api_Feed.feedUnlike(postId: post.id)
             }
         } catch {
-            print("❌ Fehler beim Liken: \(error.localizedDescription)")
+            // Rollback bei Fehler
+            await MainActor.run {
+                likedPosts[post.id] = currentLikedState
+            }
         }
     }
 

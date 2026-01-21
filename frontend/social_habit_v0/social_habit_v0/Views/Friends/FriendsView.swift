@@ -39,6 +39,7 @@ struct FriendsView: View {
             .sheet(isPresented: $showAddSheet) {
                 addFriendsSheet
             }
+            .id(theme.currentPreset)
         }
     }
 }

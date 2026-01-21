@@ -157,3 +157,8 @@ def optional_auth(fn):
         return fn(*args, **kwargs)
     
     return wrapper
+
+
+# Aliases für consistency
+require_auth = auth_required
+require_admin = admin_required

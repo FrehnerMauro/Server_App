@@ -9,6 +9,7 @@ from backend.core.config import get_settings
 from backend.core.logging import setup_logging, get_logger
 from backend.core.database import init_database_pool, close_database_pool
 from backend.api.middleware import setup_all_middleware
+from backend.tasks import init_scheduler
 
 # API Routes (neue V2-Architektur)
 from backend.api.routes import (
@@ -17,6 +18,7 @@ from backend.api.routes import (
     challenge_routes,
     friend_routes,
     notification_routes,
+    billing_routes,
 )
 
 # Legacy Routes (alte Frontend-Kompatibilität)
@@ -30,6 +32,7 @@ from backend.blueprints.user import (
     settings as legacy_settings,
     stats as legacy_stats,
 )
+from backend.blueprints.admin import admin
 
 logger = get_logger(__name__)
 
@@ -63,7 +66,10 @@ def create_app() -> Flask:
     # CORS
     CORS(
         app,
-        resources={r"/api/*": {"origins": settings.cors_origins}},
+        resources={
+            r"/api/*": {"origins": settings.cors_origins},
+            r"/admin/*": {"origins": settings.cors_origins}
+        },
         supports_credentials=settings.cors_allow_credentials,
         allow_headers=settings.cors_allow_headers,
         methods=settings.cors_allow_methods
@@ -84,6 +90,7 @@ def create_app() -> Flask:
     app.register_blueprint(challenge_routes.bp, url_prefix="/api/v2/challenges")
     app.register_blueprint(friend_routes.bp, url_prefix="/api/v2/friends")
     app.register_blueprint(notification_routes.bp, url_prefix="/api/v2/notifications")
+    app.register_blueprint(billing_routes.billing_bp, url_prefix="/api/billing")
     
     # Register LEGACY Blueprints (they already have their own prefixes like /feed, /challenges, etc.)
     app.register_blueprint(legacy_auth_routes.bp, name="legacy_auth")
@@ -94,8 +101,17 @@ def create_app() -> Flask:
     app.register_blueprint(legacy_notifications.bp, name="legacy_notifications")
     app.register_blueprint(legacy_settings.bp, name="legacy_settings")
     app.register_blueprint(legacy_stats.bp, name="legacy_stats")
+    app.register_blueprint(admin.bp, name="admin")
     
-    logger.info("All blueprints registered (V2 + Legacy)")
+    logger.info("All blueprints registered (V2 + Legacy + Admin)")
+    
+    # Initialize Background Task Scheduler
+    try:
+        init_scheduler(app)
+        logger.info("Background task scheduler initialized and started")
+    except Exception as e:
+        logger.error(f"Failed to initialize scheduler: {str(e)}")
+        logger.warning("App will continue without background tasks")
     
     # Health Check Endpoint
     @app.get("/health")
@@ -142,6 +158,16 @@ def create_app() -> Flask:
     def cleanup():
         """Cleanup-Funktion beim Beenden."""
         logger.info("Shutting down application...")
+        
+        # Stop background scheduler
+        try:
+            from backend.tasks import get_scheduler
+            scheduler = get_scheduler()
+            scheduler.stop()
+            logger.info("Background scheduler stopped")
+        except Exception as e:
+            logger.warning(f"Error stopping scheduler: {str(e)}")
+        
         close_database_pool()
         logger.info("Database pool closed")
     

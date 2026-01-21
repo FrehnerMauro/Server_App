@@ -10,7 +10,6 @@ struct SettingsView: View {
     @State private var password: String = ""
     @State private var avatar: UIImage?
     @State private var selectedItem: PhotosPickerItem?
-    @State private var accentSelection: Color = ThemePreset.ocean.accent
 
     @State private var loading = false
     @State private var info: String?
@@ -59,14 +58,11 @@ struct SettingsView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(palette.background, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .id(theme.currentPreset)
         }
         .appBackground()
         .onAppear {
             displayName = app.meSettings?.display_name ?? ""
-            accentSelection = palette.accent
-        }
-        .onChange(of: theme.theme) { _ in
-            accentSelection = palette.accent
         }
         .onChange(of: selectedItem) { item in
             Task {
@@ -125,39 +121,23 @@ struct SettingsView: View {
     private var themeSection: some View {
         SettingsSection(title: "Design & Farben") {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Akzentfarbe")
+                Text("App-Farbe")
                     .font(.subheadline)
                     .foregroundColor(palette.textSecondary)
 
-                ColorPicker("Akzentfarbe", selection: $accentSelection, supportsOpacity: false)
-                    .labelsHidden()
-                    .onChange(of: accentSelection) { newValue in
-                        theme.setCustomAccent(newValue)
-                    }
-
-                if theme.usesCustomAccent {
-                    Button {
-                        theme.selectPreset(theme.currentPreset)
-                        accentSelection = palette.accent
-                    } label: {
-                        Label("Zurück zum Preset", systemImage: "arrow.uturn.backward")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(palette.textSecondary)
-                }
-
-                Text("Voreinstellungen")
-                    .font(.subheadline)
+                Text("Wähle eine der 6 Farben für Akzente, Toolbar und Icons.")
+                    .font(.caption)
                     .foregroundColor(palette.textSecondary)
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     ForEach(ThemePreset.allCases) { preset in
                         Button {
                             theme.selectPreset(preset)
-                            accentSelection = palette.accent
                         } label: {
-                            ThemePresetChip(preset: preset, isSelected: !theme.usesCustomAccent && theme.currentPreset == preset)
+                            ThemePresetChip(
+                                preset: preset,
+                                isSelected: theme.currentPreset == preset
+                            )
                         }
                     }
                 }
@@ -214,19 +194,19 @@ struct SettingsView: View {
             Button {
                 UIApplication.shared.open(privacyURL)
             } label: {
-                SettingsLinkRow(title: "Datenschutzerklärung", iconName: "lock.shield", tint: .purple)
+                SettingsLinkRow(title: "Datenschutzerklärung", iconName: "lock.shield")
             }
 
             Button {
                 UIApplication.shared.open(termsURL)
             } label: {
-                SettingsLinkRow(title: "AGB", iconName: "doc.text", tint: .blue)
+                SettingsLinkRow(title: "AGB", iconName: "doc.text")
             }
 
             Button {
                 showingBlocked = true
             } label: {
-                SettingsLinkRow(title: "Blockierte Benutzer", iconName: "person.fill.xmark", tint: .red)
+                SettingsLinkRow(title: "Blockierte Benutzer", iconName: "person.fill.xmark")
             }
         }
     }
@@ -236,14 +216,14 @@ struct SettingsView: View {
             Button {
                 Task { await logout() }
             } label: {
-                SettingsLinkRow(title: "Abmelden", iconName: "arrow.right.circle", tint: .orange, showChevron: false)
+                SettingsLinkRow(title: "Abmelden", iconName: "arrow.right.circle", showChevron: false)
             }
             .buttonStyle(.plain)
 
             Button(role: .destructive) {
                 showingDeleteConfirm = true
             } label: {
-                SettingsLinkRow(title: "Profil löschen", iconName: "trash", tint: .red, showChevron: false)
+                SettingsLinkRow(title: "Profil löschen", iconName: "trash", showChevron: false)
             }
             .buttonStyle(.plain)
         }
@@ -411,13 +391,12 @@ struct SettingsLinkRow: View {
     @EnvironmentObject private var theme: ThemeManager
     let title: String
     let iconName: String
-    let tint: Color
     var showChevron: Bool = true
 
     var body: some View {
         HStack {
             Image(systemName: iconName)
-                .foregroundColor(tint)
+                .foregroundColor(theme.theme.accent)
             Text(title)
                 .foregroundColor(theme.theme.textPrimary)
             Spacer()

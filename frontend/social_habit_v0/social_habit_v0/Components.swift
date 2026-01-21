@@ -117,7 +117,32 @@ extension Color {
     static let gradientBottom = Color(red: 0.2, green: 0.4, blue: 1.0)
     static let softWhite = Color.white.opacity(0.9)
 }
+// MARK: - 🔹 Circular Progress View
 
+struct CircularProgressView: View {
+    let progress: CGFloat
+    let color: Color
+    
+    var body: some View {
+        Circle()
+            .stroke(color.opacity(0.2), lineWidth: 3)
+            .background(Circle().fill(Color.clear))
+            .overlay(
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(
+                        LinearGradient(
+                            gradient: Gradient(colors: [color, color.opacity(0.6)]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeInOut(duration: 0.5), value: progress)
+            )
+    }
+}
 // MARK: - 🔹 Beispiel-Nutzung
 
 /*

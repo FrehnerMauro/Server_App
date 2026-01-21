@@ -35,6 +35,7 @@ struct ContentView: View {
     @EnvironmentObject private var theme: ThemeManager
 
     @State private var selectedTab = 0
+    @State private var refreshTrigger = UUID()
 
     var body: some View {
         ZStack {
@@ -59,6 +60,8 @@ struct ContentView: View {
                             .tabItem { Label("Profil", systemImage: "person.crop.circle") }
                             .tag(3)
                     }
+                    .tint(theme.theme.accent)
+                    .id(refreshTrigger)
                 } else {
                     LoginView()
                 }
@@ -66,6 +69,10 @@ struct ContentView: View {
         }
         .animation(.default, value: app.token != nil)
         .onAppear { applyCustomTabBarTheme(theme.theme) }
-        .onChange(of: theme.theme) { applyCustomTabBarTheme($0) }
+        .onChange(of: theme.currentPreset) { _ in 
+            applyCustomTabBarTheme(theme.theme)
+            // Force TabView to rebuild
+            refreshTrigger = UUID()
+        }
     }
 }

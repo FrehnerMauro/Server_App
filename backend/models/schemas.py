@@ -32,7 +32,7 @@ class ChatBody(BaseModel):
 class ConfirmBody(BaseModel):
     imageUrl: str
     caption: Optional[str] = None
-    visibility: Optional[str] = "freunde"
+    visibility: Optional[str] = "friends"  # 'friends' oder 'private'
     user_id: Optional[int] = None
     challenge_id: Optional[int] = None
     timestamp: Optional[int] = None

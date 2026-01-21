@@ -79,7 +79,7 @@ def create_challenge():
         "created_at": now,
     })
 
-    # 2) Creator als Mitglied
+    # 2) Creator als Mitglied (status='creator')
     db.insert("challenge_members", {
         "challenge_id": cid,
         "user_id": request.uid,
@@ -87,21 +87,7 @@ def create_challenge():
         "status": "creator"
     })
 
-    # 3) Stats init
-    db.insert("challenge_stats", {
-        "challenge_id": cid,
-        "user_id": request.uid,
-        "conf_count": 0,
-        "fail_count": 0,
-        "streak": 0,
-        "neg_streak": 0,
-        "blocked": "run",
-        "last_computed": None,
-        "created_at": now,
-        "updated_at": now
-    })
-
-    # 4) Chat-Start
+    # 3) Chat-Start
     db.insert("challenge_chat", {
         "challenge_id": cid,
         "user_id": request.uid,
@@ -109,6 +95,10 @@ def create_challenge():
         "image_url": None,
         "created_at": now
     })
+
+    # 4) Stats initialisieren (setzt blocked basierend auf Startdatum)
+    from backend.blueprints.user.stats import init_challenge_members
+    init_challenge_members(cid)
 
     return jsonify({"id": cid, "initialized": True}), 201
 
@@ -130,11 +120,24 @@ def challenge_detail(cid: int):
 @auth_required
 def challenge_members(cid: int):
     res = db.query("""
-        SELECT u.id, u.vorname, u.name, u.avatar
+        SELECT 
+            u.id, 
+            u.vorname, 
+            u.name, 
+            u.avatar,
+            m.status,
+            cs.blocked,
+            cs.conf_count,
+            cs.fail_count,
+            cs.streak,
+            cs.neg_streak,
+            cs.today_pending,
+            cs.today_done
         FROM challenge_members m
         JOIN users u ON u.id = m.user_id
+        LEFT JOIN challenge_stats cs ON cs.challenge_id = %s AND cs.user_id = m.user_id
         WHERE m.challenge_id = %s
-    """, (cid,))
+    """, (cid, cid))
     return jsonify(res)
 
 
@@ -794,6 +797,14 @@ def challenge_confirm(cid: int):
     uid = request.uid
     now = now_ms()
     duration_days = ch.get("duration_days") or 1
+    def _normalize_visibility(vis: str) -> str:
+        v = (vis or "friends").lower()
+        if v in ("freunde", "friends"):
+            return "friends"
+        if v in ("privat", "private"):
+            return "private"
+        return "friends"
+    body_visibility = _normalize_visibility(body.visibility)
 
     # 🔍 Prüfen, ob heute schon ein Confirm gemacht wurde
     today_stat = db.query_one("""
@@ -835,7 +846,7 @@ def challenge_confirm(cid: int):
             INSERT INTO feed_posts (user_id, challenge_id, content, image_url, visibility, progress, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
-        """, (uid, cid, body.caption or "", body.imageUrl, body.visibility, progress, now, now))
+        """, (uid, cid, body.caption or "", body.imageUrl, body_visibility, progress, now, now))
         post_id = cur.fetchone()["id"]
 
         # 4️⃣ Stats aktualisieren oder neu anlegen

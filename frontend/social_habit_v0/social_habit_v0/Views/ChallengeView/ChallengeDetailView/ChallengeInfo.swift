@@ -61,6 +61,7 @@ struct ChallengeInfoView: View {
         }
         .navigationTitle("Challenge Info")
         .navigationBarTitleDisplayMode(.inline)
+        .id(theme.currentPreset)
         .task { await loadInfo() }
         .alert(isPresented: $showAlert) {
             Alert(title: Text("Challenge Info"),
@@ -243,12 +244,20 @@ struct ChallengeInfoView: View {
 
     // MARK: - Helper
     private func memberAvatar(_ member: ChallengeInfoResponse.ChallengeMemberInfo) -> some View {
+        // Bestimme Ring-Farbe basierend auf blocked Status
+        let ringColor = getRingColor(for: member)
+        let showRing = member.blocked != "not_started" // Kein Ring wenn nicht gestartet
+        
         if let avatar = member.avatar_url, !avatar.isEmpty {
             return AnyView(
                 RemoteOrDataURLImage(urlString: avatar)
                     .frame(width: 50, height: 50)
                     .clipShape(Circle())
-                    .overlay(Circle().stroke(palette.accent, lineWidth: 2))
+                    .overlay(
+                        showRing ? 
+                            Circle().stroke(ringColor, lineWidth: 2) :
+                            nil
+                    )
             )
         } else {
             return AnyView(
@@ -260,8 +269,30 @@ struct ChallengeInfoView: View {
                                 .foregroundColor(palette.textPrimary)
                     )
                     .frame(width: 50, height: 50)
-                    .overlay(Circle().stroke(palette.accent, lineWidth: 2))
+                    .overlay(
+                        showRing ? 
+                            Circle().stroke(ringColor, lineWidth: 2) :
+                            nil
+                    )
             )
+        }
+    }
+    
+    private func getRingColor(for member: ChallengeInfoResponse.ChallengeMemberInfo) -> Color {
+        switch member.blocked {
+        case "completed":
+            return .green // 🟢 Erledigt
+        case "pending":
+            return .red // 🔴 Pending
+        case "not_started":
+            return .clear // Kein Ring
+        default:
+            // "run" oder andere Status
+            if member.today_pending == 1 {
+                return .red // 🔴 Heute fällig und nicht gemacht
+            } else {
+                return .blue // 🔵 Läuft
+            }
         }
     }
     

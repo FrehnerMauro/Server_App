@@ -29,6 +29,7 @@ enum ThemePreset: String, CaseIterable, Identifiable {
     case sunset
     case graphite
     case blossom
+    case amethyst
 
     var id: String { rawValue }
 
@@ -39,6 +40,7 @@ enum ThemePreset: String, CaseIterable, Identifiable {
         case .sunset: return "Sunset"
         case .graphite: return "Graphite"
         case .blossom: return "Blossom"
+        case .amethyst: return "Amethyst"
         }
     }
 
@@ -49,6 +51,7 @@ enum ThemePreset: String, CaseIterable, Identifiable {
         case .sunset: return Color(red: 1.0, green: 0.53, blue: 0.28)
         case .graphite: return Color(red: 0.78, green: 0.78, blue: 0.82)
         case .blossom: return Color(red: 0.91, green: 0.36, blue: 0.62)
+        case .amethyst: return Color(red: 0.58, green: 0.46, blue: 0.96)
         }
     }
 }
@@ -56,30 +59,20 @@ enum ThemePreset: String, CaseIterable, Identifiable {
 final class ThemeManager: ObservableObject {
     @Published private(set) var theme: Theme
     @Published private(set) var currentPreset: ThemePreset
-    @Published private(set) var usesCustomAccent: Bool
 
     private let storage: ThemeStorage
 
     init(storage: ThemeStorage = .init()) {
         self.storage = storage
-        let state = storage.load()
-        let accent = state.customAccent ?? state.preset.accent
-        currentPreset = state.preset
-        usesCustomAccent = state.customAccent != nil
-        theme = ThemeFactory.make(accent: accent, name: state.customAccent == nil ? state.preset.displayName : "Custom")
+        let preset = storage.load()
+        currentPreset = preset
+        theme = ThemeFactory.make(accent: preset.accent, name: preset.displayName)
     }
 
     func selectPreset(_ preset: ThemePreset) {
         theme = ThemeFactory.make(accent: preset.accent, name: preset.displayName)
         currentPreset = preset
-        usesCustomAccent = false
-        storage.save(preset: preset, customAccent: nil)
-    }
-
-    func setCustomAccent(_ color: Color) {
-        theme = ThemeFactory.make(accent: color, name: "Custom")
-        usesCustomAccent = true
-        storage.save(preset: currentPreset, customAccent: color)
+        storage.save(preset: preset)
     }
 }
 
@@ -110,29 +103,18 @@ private enum ThemeFactory {
 
 struct ThemeStorage {
     private let presetKey = "ui.theme.preset"
-    private let accentKey = "ui.theme.accent"
+    private let legacyAccentKey = "ui.theme.accent"
 
-    struct State {
-        let preset: ThemePreset
-        let customAccent: Color?
-    }
-
-    func load() -> State {
-        let preset = ThemePreset(rawValue: UserDefaults.standard.string(forKey: presetKey) ?? "") ?? .ocean
-        let accent = UserDefaults.standard.string(forKey: accentKey).flatMap { Color(hex: $0) }
-        return State(preset: preset, customAccent: accent)
-    }
-
-    func save(preset: ThemePreset?, customAccent: Color?) {
-        if let preset = preset {
-            UserDefaults.standard.set(preset.rawValue, forKey: presetKey)
+    func load() -> ThemePreset {
+        if UserDefaults.standard.object(forKey: legacyAccentKey) != nil {
+            UserDefaults.standard.removeObject(forKey: legacyAccentKey)
         }
 
-        if let color = customAccent, let hex = color.hexString {
-            UserDefaults.standard.set(hex, forKey: accentKey)
-        } else {
-            UserDefaults.standard.removeObject(forKey: accentKey)
-        }
+        return ThemePreset(rawValue: UserDefaults.standard.string(forKey: presetKey) ?? "") ?? .ocean
+    }
+
+    func save(preset: ThemePreset) {
+        UserDefaults.standard.set(preset.rawValue, forKey: presetKey)
     }
 }
 

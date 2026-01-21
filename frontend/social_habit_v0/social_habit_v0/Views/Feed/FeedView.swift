@@ -79,7 +79,10 @@ struct FeedView: View {
                                         primaryAccent: palette.accent,
                                         secondaryAccent: palette.accentStrong,
                                         textPrimary: palette.textPrimary,
-                                        textSecondary: palette.textSecondary
+                                        textSecondary: palette.textSecondary,
+                                        onCommentAdded: {
+                                            updatePostCommentCount(postId: post.id)
+                                        }
                                     )
                                     .transition(.slide)
                                 }
@@ -101,6 +104,7 @@ struct FeedView: View {
                 await loadFeed()
                 await refreshNotificationCount()
             }
+            .id(theme.currentPreset)
         }
     }
 
@@ -155,43 +159,74 @@ struct FeedView: View {
     private func postCard(_ post: FeedItemDTO) -> some View {
         @State var isAnimatingLike = false
 
-        return VStack(alignment: .leading, spacing: 15) {
-            HStack(spacing: 15) {
-                if let avatar = post.avatar_url, !avatar.isEmpty {
-                    RemoteOrDataURLImage(urlString: avatar)
-                        .frame(width: 55, height: 55)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(palette.accent, lineWidth: 2))
-                        .shadow(color: palette.accent.opacity(0.7), radius: 5)
-                } else {
-                    Circle().fill(palette.accent.opacity(0.3))
-                        .overlay(Image(systemName: "person.fill")
-                            .foregroundColor(.white.opacity(0.8)))
-                        .frame(width: 55, height: 55)
-                        .overlay(Circle().stroke(palette.accent, lineWidth: 2))
-                        .shadow(color: palette.accent.opacity(0.7), radius: 5)
+        return VStack(alignment: .leading, spacing: 0) {
+            // Header mit Avatar und Benutzerinfo
+            HStack(spacing: 12) {
+                // Avatar mit Pulsing-Effekt
+                ZStack {
+                    Circle()
+                        .fill(palette.accent.opacity(0.2))
+                        .frame(width: 60, height: 60)
+                    
+                    if let avatar = post.avatar_url, !avatar.isEmpty {
+                        RemoteOrDataURLImage(urlString: avatar)
+                            .frame(width: 56, height: 56)
+                            .clipShape(Circle())
+                    } else {
+                        Circle().fill(palette.accent.opacity(0.3))
+                            .overlay(Image(systemName: "person.fill")
+                                .foregroundColor(.white.opacity(0.8)))
+                            .frame(width: 56, height: 56)
+                    }
+                    
+                    Circle()
+                        .stroke(
+                            LinearGradient(
+                                gradient: Gradient(colors: [palette.accent, palette.accentStrong]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 2
+                        )
+                        .frame(width: 60, height: 60)
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(post.display_name)
-                        .font(.title3.weight(.bold))
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundColor(palette.textPrimary)
-                    Text(formatTs(post.created_at))
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(palette.accentStrong)
+                    
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock.fill")
+                            .font(.caption)
+                            .foregroundColor(palette.accentStrong)
+                        Text(formatTs(post.created_at))
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(palette.accentStrong)
+                    }
 
                     if let title = post.challenge_title, !title.isEmpty {
                         HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.caption)
+                                .foregroundColor(palette.accent)
                             Text(title)
-                                .font(.caption.weight(.bold))
+                                .font(.caption2.weight(.bold))
                                 .foregroundColor(palette.accent)
                             if let progress = post.progress {
-                                Text("– \(progress)%")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundColor(palette.textSecondary)
+                                ZStack {
+                                    Circle()
+                                        .fill(palette.accent.opacity(0.2))
+                                    
+                                    CircularProgressView(progress: CGFloat(progress) / 100.0, color: palette.accent)
+                                    
+                                    Text("\(progress)%")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundColor(palette.accent)
+                                }
+                                .frame(width: 30, height: 30)
                             }
                         }
-                        .padding(.top, 2)
                     }
                 }
 
@@ -203,23 +238,37 @@ struct FeedView: View {
                         showReportSheet = true
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .foregroundColor(palette.accent)
-                        .font(.title2.weight(.bold))
+                    Image(systemName: "ellipsis.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(palette.accentStrong)
                 }
             }
+            .padding(16)
 
+            Divider()
+                .background(palette.accent.opacity(0.2))
+
+            // Content
             if let img = post.image_url, !img.isEmpty {
                 imageContainer(img)
             }
 
             if !post.content.isEmpty {
-                Text(post.content)
-                    .font(.body.weight(.medium))
-                    .foregroundColor(palette.textPrimary)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(post.content)
+                        .font(.system(size: 16, weight: .medium, design: .default))
+                        .foregroundColor(palette.textPrimary)
+                        .lineSpacing(2)
+                }
+                .padding(16)
             }
 
-            HStack(spacing: 35) {
+            Divider()
+                .background(palette.accent.opacity(0.2))
+
+            // Engagement Stats
+            HStack(spacing: 0) {
+                // Likes
                 Button {
                     Task {
                         withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
@@ -233,46 +282,87 @@ struct FeedView: View {
                         }
                     }
                 } label: {
-                    HStack {
+                    HStack(spacing: 8) {
                         Image(systemName: post.safeLikedByMe ? "heart.fill" : "heart")
-                            .font(.system(size: 26, weight: .black))
-                            .foregroundColor(post.safeLikedByMe ? palette.accent : palette.textPrimary)
-                            .shadow(color: post.safeLikedByMe ? palette.accent.opacity(0.8) : .clear, radius: 4)
-                            .scaleEffect(isAnimatingLike ? 1.2 : 1.0)
-                        Text("\(post.safeLikesCount)")
-                            .foregroundColor(palette.textPrimary)
-                            .font(.title2.bold())
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(post.safeLikedByMe ? palette.accent : palette.accentStrong)
+                            .shadow(color: post.safeLikedByMe ? palette.accent.opacity(0.6) : .clear, radius: 3)
+                            .scaleEffect(isAnimatingLike ? 1.15 : 1.0)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Gefällt mir")
+                                .font(.caption2.weight(.bold))
+                                .foregroundColor(palette.textSecondary)
+                            Text("\(post.safeLikesCount)")
+                                .font(.headline.weight(.bold))
+                                .foregroundColor(palette.textPrimary)
+                        }
                     }
                 }
                 .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
 
+                Divider()
+                    .frame(height: 30)
+                    .background(palette.accent.opacity(0.2))
+
+                // Comments
                 Button {
                     withAnimation {
                         expandedCommentsPostId = expandedCommentsPostId == post.id ? nil : post.id
                     }
                 } label: {
-                    HStack {
+                    HStack(spacing: 8) {
                         Image(systemName: "bubble.right.fill")
+                            .font(.system(size: 20, weight: .semibold))
                             .foregroundColor(expandedCommentsPostId == post.id ? palette.accent : palette.accentStrong)
-                            .font(.system(size: 26, weight: .black))
-                        Text("\(post.safeCommentsCount)")
-                            .foregroundColor(palette.textPrimary)
-                            .font(.title2.bold())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Kommentare")
+                                .font(.caption2.weight(.bold))
+                                .foregroundColor(palette.textSecondary)
+                            Text("\(post.safeCommentsCount)")
+                                .font(.headline.weight(.bold))
+                                .foregroundColor(palette.textPrimary)
+                        }
                     }
                 }
                 .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
 
                 Spacer()
             }
         }
-        .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(palette.surface.opacity(0.95))
-                .overlay(RoundedRectangle(cornerRadius: 16)
-                    .stroke(palette.accent.opacity(0.5), lineWidth: 1.5))
+            RoundedRectangle(cornerRadius: 18)
+                .fill(
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            palette.surface.opacity(0.98),
+                            palette.surface.opacity(0.92)
+                        ]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    palette.accent.opacity(0.4),
+                                    palette.accent.opacity(0.1)
+                                ]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.5
+                        )
+                )
         )
-        .shadow(color: palette.accent.opacity(0.4), radius: 12, x: 0, y: 5)
+        .shadow(color: palette.accent.opacity(0.3), radius: 10, x: 0, y: 4)
     }
 
     // MARK: - Notification Count laden
@@ -333,6 +423,15 @@ struct FeedView: View {
             posts[index] = post
             self.error = error.localizedDescription
         }
+    }
+
+    @MainActor
+    private func updatePostCommentCount(postId: Int) {
+        guard let index = posts.firstIndex(where: { $0.id == postId }) else { return }
+        
+        var updated = posts[index]
+        updated.commentsCount = (updated.commentsCount ?? 0) + 1
+        posts[index] = updated
     }
 
     private func imageContainer(_ img: String) -> some View {

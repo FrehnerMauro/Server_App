@@ -151,7 +151,38 @@ def create_schema(con: sqlite3.Connection):
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         image_url TEXT,
         caption TEXT,
-        visibility TEXT CHECK(visibility IN ('privat','freunde','oeffentlich')) DEFAULT 'freunde',
+        visibility TEXT CHECK(visibility IN ('private','friends','privat','freunde')) DEFAULT 'friends',
+        created_at INTEGER NOT NULL
+    );
+    """)
+
+    # FEED ADS
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS feed_ads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        image_url TEXT NOT NULL,
+        click_url TEXT,
+        headline TEXT,
+        body TEXT,
+        cta_label TEXT,
+        status TEXT CHECK(status IN ('draft','active','paused')) DEFAULT 'draft',
+        start_at INTEGER,
+        end_at INTEGER,
+        weight INTEGER DEFAULT 1,
+        audience_filter TEXT,
+        impressions INTEGER DEFAULT 0,
+        clicks INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER
+    );
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS feed_ad_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ad_id INTEGER NOT NULL REFERENCES feed_ads(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        event_type TEXT CHECK(event_type IN ('impression','click')) NOT NULL,
         created_at INTEGER NOT NULL
     );
     """)
@@ -199,11 +230,11 @@ def insert_sample_data(con: sqlite3.Connection):
 
     # Challenge-Log
     cur.execute("INSERT INTO challenge_logs (challenge_id, user_id, timestamp, image_url, caption, visibility) VALUES (?,?,?,?,?,?)",
-                (cid, uid, now, "https://example.com/img1.jpg", "Erster Tag geschafft!", "freunde"))
+                (cid, uid, now, "https://example.com/img1.jpg", "Erster Tag geschafft!", "friends"))
 
     # Feed-Post
-    cur.execute("INSERT INTO feed_posts (user_id, image_url, caption, created_at) VALUES (?,?,?,?)",
-                (uid, "https://example.com/post1.jpg", "Challenge gestartet!", now))
+    cur.execute("INSERT INTO feed_posts (user_id, image_url, caption, created_at, visibility) VALUES (?,?,?,?,?)",
+                (uid, "https://example.com/post1.jpg", "Challenge gestartet!", now, "friends"))
 
     con.commit()
 

@@ -63,8 +63,8 @@ struct ChallengeChatView: View {
     @State private var reportError: String?
 
     private var palette: Theme { theme.theme }
-    private let myBubbleColor = Color(red: 0.1, green: 0.3, blue: 0.8).opacity(0.9)
-    private let otherBubbleColor = Color(red: 0.1, green: 0.1, blue: 0.3).opacity(0.8)
+    private let myBubbleColor = Color(red: 0.2, green: 0.5, blue: 1.0)
+    private let fallbackPeerColor = Color(red: 0.18, green: 0.2, blue: 0.32)
 
     var body: some View {
         ZStack {
@@ -95,6 +95,7 @@ struct ChallengeChatView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarBackground(palette.background, for: .navigationBar)
+        .id(theme.currentPreset)
         .onAppear {
             UINavigationBar.appearance().titleTextAttributes = [.foregroundColor: UIColor.white]
         }
@@ -160,17 +161,14 @@ struct ChallengeChatView: View {
 
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: 16) {
                     ForEach(messages) { msg in
                         ChatBubbleView(
                             message: msg,
                             members: members,
                             currentUserId: vm.currentUserId,
-                            primaryAccent: palette.accent,
                             myBubbleColor: myBubbleColor,
-                            otherBubbleColor: otherBubbleColor,
-                            textPrimary: palette.textPrimary,
-                            textSecondary: palette.textSecondary,
+                            fallbackPeerColor: fallbackPeerColor,
                             onReport: { messageId in
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 reportMessageId = messageId
@@ -182,14 +180,18 @@ struct ChallengeChatView: View {
                         )
                     }
                 }
-                .padding(.top, 10)
-                .padding(.horizontal, 5)
-                .padding(.bottom, 5)
-                .onChange(of: vm.response?.chat.count) { _ in
-                    if messages.last?.id != nil {
-                        withAnimation {
-                            proxy.scrollTo(messages.last!.id, anchor: .bottom)
-                        }
+                .padding(.vertical, 16)
+                .padding(.horizontal, 12)
+            }
+            .onAppear {
+                if let last = messages.last?.id {
+                    proxy.scrollTo(last, anchor: .bottom)
+                }
+            }
+            .onChange(of: vm.response?.chat.count) { _ in
+                if let lastId = messages.last?.id {
+                    withAnimation {
+                        proxy.scrollTo(lastId, anchor: .bottom)
                     }
                 }
             }
@@ -199,8 +201,8 @@ struct ChallengeChatView: View {
     // MARK: - Eingabezeile
     @ViewBuilder
     private func chatInput() -> some View {
-        VStack(spacing: 8) {
-            HStack(alignment: .bottom, spacing: 10) {
+        VStack(spacing: 10) {
+            HStack(alignment: .bottom, spacing: 12) {
 
                 // 📸 Bild hochladen (als Confirm)
                 ChallengeConfirmImagePicker(challengeId: challengeId, visibility: "friends")
@@ -212,13 +214,19 @@ struct ChallengeChatView: View {
                 TextField("Nachricht schreiben …", text: $vm.messageText, axis: .vertical)
                     .textFieldStyle(.plain)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color.black.opacity(0.6))
-                    .clipShape(RoundedRectangle(cornerRadius: 25))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                    .stroke(palette.accent.opacity(0.25), lineWidth: 1)
+                            )
+                    )
                     .lineLimit(1...5)
                     .autocorrectionDisabled(true)
-                    .shadow(color: palette.accent.opacity(0.4), radius: 5)
+                    .shadow(color: palette.accent.opacity(0.25), radius: 8, x: 0, y: 3)
                 
                 // 📤 Senden
                 Button {
@@ -227,21 +235,35 @@ struct ChallengeChatView: View {
                     Image(systemName: "arrow.up")
                         .font(.title3.weight(.bold))
                         .foregroundColor(.white)
-                        .padding(12)
+                        .padding(13)
                         .background(
-                            vm.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? Color.gray.opacity(0.7)
-                            : palette.accent.opacity(0.9)
+                            LinearGradient(
+                                colors: vm.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? [Color.gray.opacity(0.6), Color.gray.opacity(0.5)]
+                                : [palette.accentStrong, palette.accent],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
                         .clipShape(Circle())
-                        .shadow(color: palette.accent.opacity(vm.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0 : 0.8), radius: 8)
+                        .shadow(color: palette.accent.opacity(vm.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.0 : 0.7), radius: 10, x: 0, y: 4)
                 }
                 .disabled(vm.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(.horizontal)
             .padding(.vertical, 10)
         }
-        .background(Color.black.opacity(0.3))
+        .background(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .fill(Color.black.opacity(0.32))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                )
+                .shadow(color: palette.accent.opacity(0.12), radius: 10, x: 0, y: 6)
+        )
+        .padding(.horizontal, 4)
+        .padding(.bottom, 6)
     }
 
     // MARK: - Report submit
@@ -297,12 +319,13 @@ struct ChatBubbleView: View {
     let message: ChatMessage
     let members: [ChatMember]
     let currentUserId: Int?
-    let primaryAccent: Color
     let myBubbleColor: Color
-    let otherBubbleColor: Color
-    let textPrimary: Color
-    let textSecondary: Color
+    let fallbackPeerColor: Color
     let onReport: (Int) -> Void
+
+    private let peerPaletteHex = [
+        "#06B6D4", "#10B981", "#F59E0B", "#F43F5E", "#8B5CF6", "#EC4899", "#0EA5E9", "#EAB308"
+    ]
 
     private var isMine: Bool { message.userId == currentUserId }
     private var member: ChatMember? { members.first(where: { $0.userId == message.userId }) }
@@ -314,10 +337,32 @@ struct ChatBubbleView: View {
         return formatter.string(from: date)
     }
 
+    private func deterministicColorHex(for text: String) -> String {
+        let hash = text.unicodeScalars.reduce(5381) { ($0 << 5) &+ $0 &+ Int($1.value) }
+        let index = abs(hash) % peerPaletteHex.count
+        return peerPaletteHex[index]
+    }
+
+    private var peerAccentColor: Color {
+        if isMine { return myBubbleColor }
+        if let hex = member?.colorHex, let color = Color(hex: hex) {
+            return color.adjust(saturation: 1.0, brightness: 1.0)
+        }
+        if let name = member?.displayName, let color = Color(hex: deterministicColorHex(for: name)) {
+            return color.adjust(saturation: 0.95, brightness: 0.95)
+        }
+        return fallbackPeerColor
+    }
+
     private var bubbleShape: some Shape { BubbleTailShape(isMine: isMine) }
-    private var bubbleFillColor: Color { isMine ? myBubbleColor : otherBubbleColor }
-    private var bubbleStrokeColor: Color { isMine ? primaryAccent.opacity(0.6) : Color.white.opacity(0.4) }
-    private var textColor: Color { textPrimary }
+    private var bubbleBase: Color { isMine ? myBubbleColor : peerAccentColor }
+    private var bubbleGradient: LinearGradient {
+        let top = bubbleBase.adjust(saturation: 1.08, brightness: 1.15)
+        let bottom = bubbleBase.adjust(saturation: 0.95, brightness: 0.75)
+        return LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+    private var bubbleStrokeColor: Color { bubbleBase.adjust(brightness: 0.65).opacity(1.0) }
+    private var nameAccent: Color { isMine ? .white.opacity(0.92) : peerAccentColor }
 
     private var isConfirm: Bool {
         message.imageUrl != nil && !(message.imageUrl?.isEmpty ?? true)
@@ -331,10 +376,16 @@ struct ChatBubbleView: View {
             VStack(alignment: isMine ? .trailing : .leading, spacing: 6) {
                 if !isMine {
                     Text(member?.displayName ?? "Unbekannt")
-                        .font(.caption2.weight(.medium))
-                        .foregroundColor(textSecondary)
-                        .foregroundColor(primaryAccent)
-                        .padding(.horizontal, 8)
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule()
+                                .fill(peerAccentColor.opacity(0.35))
+                                .overlay(Capsule().stroke(peerAccentColor.opacity(0.6), lineWidth: 1))
+                        )
+                        .shadow(color: peerAccentColor.opacity(0.4), radius: 4, x: 0, y: 2)
                 }
 
                 // CONFIRM Block (bild + optional text)
@@ -351,15 +402,18 @@ struct ChatBubbleView: View {
                 // Nur Text
                 if !isConfirm && !message.text.isEmpty {
                     Text(message.text)
+                        .font(.body)
                         .multilineTextAlignment(isMine ? .trailing : .leading)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(bubbleFillColor)
-                        .foregroundColor(textColor)
-                        .clipShape(bubbleShape)
-                        .overlay(bubbleShape.stroke(bubbleStrokeColor, lineWidth: 1.5))
-                        .shadow(color: isMine ? primaryAccent.opacity(0.4) : Color.black.opacity(0.4),
-                                radius: 5, x: isMine ? 2 : -2, y: 3)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(bubbleShape.fill(bubbleGradient))
+                        .foregroundColor(.white)
+                        .overlay(
+                            bubbleShape
+                                .stroke(bubbleStrokeColor, lineWidth: 1.3)
+                        )
+                        .shadow(color: bubbleBase.opacity(0.6), radius: 12, x: isMine ? 4 : -4, y: 8)
+                        .shadow(color: bubbleBase.opacity(0.3), radius: 3, x: 0, y: 2)
                         .contextMenu { reportMenu }
                         .onLongPressGesture {
                             onReport(message.id)
@@ -383,33 +437,42 @@ struct ChatBubbleView: View {
         if let avatarUrl = member?.avatarUrl, !avatarUrl.isEmpty {
             return AnyView(
                 RemoteOrDataURLImage(urlString: avatarUrl)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 42, height: 42)
                     .clipShape(Circle())
-                    .overlay(Circle().stroke(primaryAccent.opacity(0.8), lineWidth: 2))
-                    .shadow(color: primaryAccent.opacity(0.7), radius: 3)
+                    .overlay(Circle().stroke(peerAccentColor, lineWidth: 2.5))
+                    .shadow(color: peerAccentColor.opacity(0.8), radius: 6, x: 0, y: 2)
             )
         } else {
             return AnyView(
-                Circle().fill(primaryAccent.opacity(0.3))
-                    .overlay(Image(systemName: "person.fill").foregroundColor(.white))
-                    .frame(width: 38, height: 38)
+                Circle().fill(peerAccentColor.opacity(0.35))
+                    .overlay(Image(systemName: "person.fill").foregroundColor(.white).font(.body))
+                    .frame(width: 42, height: 42)
                     .clipShape(Circle())
-                    .overlay(Circle().stroke(primaryAccent.opacity(0.8), lineWidth: 2))
-                    .shadow(color: primaryAccent.opacity(0.7), radius: 3)
+                    .overlay(Circle().stroke(peerAccentColor, lineWidth: 2.5))
+                    .shadow(color: peerAccentColor.opacity(0.8), radius: 6, x: 0, y: 2)
             )
         }
     }
 
     private var confirmBlock: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 5) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.title3.weight(.bold))
+                    .foregroundColor(Color(red: 0.2, green: 0.95, blue: 0.4))
+                    .shadow(color: Color(red: 0.2, green: 0.95, blue: 0.4).opacity(0.9), radius: 8, x: 0, y: 0)
+                    .shadow(color: Color(red: 0.2, green: 0.95, blue: 0.4).opacity(0.6), radius: 4, x: 0, y: 0)
                 Text("Bestätigung")
-                    .font(.caption.bold())
-                    .foregroundColor(.green)
-                Text("✅")
+                    .font(.subheadline.bold())
+                    .foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.5), radius: 2)
+                Spacer()
+                Image(systemName: "sparkles")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(peerAccentColor.opacity(0.9))
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 6)
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
 
             AsyncImage(url: URL(string: message.imageUrl ?? "")) { phase in
                 switch phase {
@@ -417,14 +480,26 @@ struct ChatBubbleView: View {
                     image
                         .resizable()
                         .scaledToFit()
-                        .frame(maxWidth: 250)
-                        .cornerRadius(12)
-                        .shadow(color: .green.opacity(0.4), radius: 8)
+                        .frame(maxWidth: 270)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [peerAccentColor.opacity(0.8), peerAccentColor.opacity(0.4)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 2
+                                )
+                        )
+                        .shadow(color: peerAccentColor.opacity(0.7), radius: 16, x: 0, y: 8)
+                        .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 4)
                 case .failure(_):
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.gray.opacity(0.3))
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.gray.opacity(0.25))
                         .frame(width: 220, height: 160)
-                        .overlay(Text("⚠️ Bild konnte nicht geladen werden").font(.caption))
+                        .overlay(Text("⚠️ Bild konnte nicht geladen werden").font(.caption).foregroundColor(.white.opacity(0.75)))
                 default:
                     ProgressView()
                         .frame(width: 220, height: 160)
@@ -434,20 +509,40 @@ struct ChatBubbleView: View {
             if !message.text.isEmpty {
                 Text(message.text)
                     .font(.subheadline)
-                    .foregroundColor(.white)
+                    .foregroundColor(.white.opacity(0.95))
                     .multilineTextAlignment(isMine ? .trailing : .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 12)
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 15)
-                .fill(Color.green.opacity(0.2))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 15)
-                        .stroke(Color.green.opacity(0.5), lineWidth: 2)
-                )
-                .shadow(color: .green.opacity(0.5), radius: 8)
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                peerAccentColor.opacity(0.25),
+                                peerAccentColor.opacity(0.15)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                peerAccentColor.opacity(0.8),
+                                peerAccentColor.opacity(0.5)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
+            }
+            .shadow(color: peerAccentColor.opacity(0.6), radius: 20, x: 0, y: 10)
+            .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
         )
     }
 

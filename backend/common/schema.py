@@ -30,7 +30,12 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_url TEXT,
     is_admin INTEGER DEFAULT 0,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    -- Billing Fields
+    credits REAL DEFAULT 10.0,
+    billing_status TEXT CHECK(billing_status IN ('active','suspended','cancelled')) DEFAULT 'active',
+    subscription_tier TEXT CHECK(subscription_tier IN ('free','pro','enterprise')) DEFAULT 'free',
+    last_billing_date INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS user_blocks (
@@ -141,7 +146,7 @@ CREATE TABLE IF NOT EXISTS feed_posts (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     image_url TEXT,
-    visibility TEXT DEFAULT 'freunde',  -- ⬅️ HIER ERWEITERT
+    visibility TEXT CHECK(visibility IN ('private','friends')) DEFAULT 'friends',
     created_at INTEGER NOT NULL,
     updated_at INTEGER
 );
@@ -164,6 +169,32 @@ CREATE TABLE IF NOT EXISTS feed_comments (
     updated_at INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS feed_ads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_url TEXT NOT NULL,
+    click_url TEXT,
+    headline TEXT,
+    body TEXT,
+    cta_label TEXT,
+    status TEXT CHECK(status IN ('draft','active','paused')) DEFAULT 'draft',
+    start_at INTEGER,
+    end_at INTEGER,
+    weight INTEGER DEFAULT 1,
+    audience_filter TEXT,
+    impressions INTEGER DEFAULT 0,
+    clicks INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS feed_ad_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ad_id INTEGER NOT NULL REFERENCES feed_ads(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    event_type TEXT CHECK(event_type IN ('impression','click')) NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
 -- ============================================================
 -- REPORTS (Posts, Comments, Profiles)
 -- ============================================================
@@ -181,10 +212,28 @@ CREATE TABLE IF NOT EXISTS feed_reports (
 );
 
 -- ============================================================
+-- BILLING & EVENTS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS billing_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    amount REAL NOT NULL,
+    description TEXT,
+    created_at INTEGER NOT NULL
+);
+
+-- ============================================================
 -- INDIZES (Performance)
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_feed_posts_user ON feed_posts(user_id);
 CREATE INDEX IF NOT EXISTS idx_feed_comments_post ON feed_comments(post_id);
+CREATE INDEX IF NOT EXISTS idx_feed_ads_status ON feed_ads(status);
+CREATE INDEX IF NOT EXISTS idx_feed_ads_active_window ON feed_ads(start_at, end_at);
+CREATE INDEX IF NOT EXISTS idx_billing_events_user ON billing_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_friends_status ON user_friends(status);
+CREATE INDEX IF NOT EXISTS idx_challenge_invites_status ON challenge_invites(status);
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read);
 CREATE INDEX IF NOT EXISTS idx_challenge_members_user ON challenge_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_feed_reports_status ON feed_reports(status);
 CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id);

@@ -327,6 +327,122 @@ def delete_comment(cid):
 
 
 # ============================================================
+# FEED ADS MANAGEMENT
+# ============================================================
+
+@bp.get("/ads")
+@admin_required
+def list_ads():
+    ads = db.query("""
+        SELECT id, image_url, click_url, headline, body, cta_label, status,
+               start_at, end_at, weight, audience_filter, impressions, clicks,
+               created_at, updated_at
+        FROM feed_ads
+        ORDER BY created_at DESC
+    """)
+    return jsonify({"ads": ads})
+
+
+@bp.post("/ads")
+@admin_required
+def create_ad():
+    payload = request.get_json(force=True) or {}
+    image_url = (payload.get("image_url") or "").strip()
+    if not image_url:
+        return jsonify({"error": "image_url_required"}), 400
+
+    now = now_ms()
+    aid = db.insert("feed_ads", {
+        "image_url": image_url,
+        "click_url": (payload.get("click_url") or "").strip() or None,
+        "headline": (payload.get("headline") or "").strip() or None,
+        "body": (payload.get("body") or "").strip() or None,
+        "cta_label": (payload.get("cta_label") or "").strip() or None,
+        "status": (payload.get("status") or "draft").strip().lower(),
+        "start_at": payload.get("start_at"),
+        "end_at": payload.get("end_at"),
+        "weight": payload.get("weight") or 1,
+        "audience_filter": payload.get("audience_filter"),
+        "created_at": now,
+        "updated_at": now,
+    })
+    return jsonify({"ok": True, "ad_id": aid}), 201
+
+
+@bp.patch("/ads/<int:aid>")
+@admin_required
+def update_ad(aid: int):
+    payload = request.get_json(force=True) or {}
+    allowed = {"image_url", "click_url", "headline", "body", "cta_label",
+               "status", "start_at", "end_at", "weight", "audience_filter"}
+    updates = {k: v for k, v in payload.items() if k in allowed}
+    if not updates:
+        return jsonify({"error": "no_fields"}), 400
+    updates["updated_at"] = now_ms()
+    db.update("feed_ads", updates, "id=%s", (aid,))
+    return jsonify({"ok": True, "ad_id": aid})
+
+
+@bp.post("/ads/<int:aid>/activate")
+@admin_required
+def activate_ad(aid: int):
+    db.update("feed_ads", {"status": "active", "updated_at": now_ms()}, "id=%s", (aid,))
+    return jsonify({"ok": True, "ad_id": aid, "status": "active"})
+
+
+@bp.post("/ads/<int:aid>/pause")
+@admin_required
+def pause_ad(aid: int):
+    db.update("feed_ads", {"status": "paused", "updated_at": now_ms()}, "id=%s", (aid,))
+    return jsonify({"ok": True, "ad_id": aid, "status": "paused"})
+
+
+@bp.post("/ads/upload")
+@admin_required
+def upload_ad_image():
+    """
+    Simple Ad-Bild-Upload. Speichert Bild lokal und gibt URL zurück.
+    Frontend kann das Bild dann in create_ad verwenden.
+    """
+    import os
+    from werkzeug.utils import secure_filename
+    
+    if "file" not in request.files:
+        return jsonify({"error": "no_file"}), 400
+    
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "empty_filename"}), 400
+    
+    # Erlaubte Extensions
+    allowed_extensions = {"png", "jpg", "jpeg", "gif", "webp"}
+    ext = file.filename.rsplit(".", 1)[1].lower() if "." in file.filename else ""
+    if ext not in allowed_extensions:
+        return jsonify({"error": "invalid_extension", "allowed": list(allowed_extensions)}), 400
+    
+    # Sicherer Dateiname
+    filename = secure_filename(file.filename)
+    timestamp = now_ms()
+    unique_name = f"ad_{timestamp}_{filename}"
+    
+    # Upload-Verzeichnis
+    upload_dir = os.path.join(os.getcwd(), "static", "ads")
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    file_path = os.path.join(upload_dir, unique_name)
+    file.save(file_path)
+    
+    # URL für Frontend
+    image_url = f"/static/ads/{unique_name}"
+    
+    return jsonify({
+        "ok": True,
+        "image_url": image_url,
+        "filename": unique_name
+    }), 201
+
+
+# ============================================================
 # REPORT MANAGEMENT
 # ============================================================
 

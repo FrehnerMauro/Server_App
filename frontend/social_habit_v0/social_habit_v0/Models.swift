@@ -301,11 +301,13 @@ public struct ChatMember: Codable, Identifiable, Equatable {
     public var userId: Int
     public var displayName: String
     public var avatarUrl: String?
+    public var colorHex: String?
 
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
         case displayName = "display_name"
         case avatarUrl = "avatar_url"
+        case colorHex = "color_hex"
     }
 }
 

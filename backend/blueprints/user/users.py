@@ -36,11 +36,12 @@ def get_my_profile():
         SELECT 
             p.id, p.content, p.image_url, p.visibility, p.created_at,
             (SELECT COUNT(*) FROM feed_likes l WHERE l.post_id = p.id) AS like_count,
-            (SELECT COUNT(*) FROM feed_comments c WHERE c.post_id = p.id) AS comment_count
+            (SELECT COUNT(*) FROM feed_comments c WHERE c.post_id = p.id) AS comment_count,
+            EXISTS(SELECT 1 FROM feed_likes l WHERE l.post_id = p.id AND l.user_id = %s) AS liked_by_me
         FROM feed_posts p
         WHERE p.user_id = %s
         ORDER BY p.created_at DESC
-    """, (uid,))
+    """, (uid, uid,))
     print(f"📝 [DEBUG] Gefundene Posts für User {uid}: {len(posts)}")
 
     # Hilfsfunktion Sichtbarkeit
@@ -123,11 +124,12 @@ def get_user_profile(target_uid: int):
         SELECT 
             p.id, p.content, p.image_url, p.visibility, p.created_at,
             (SELECT COUNT(*) FROM feed_likes l WHERE l.post_id = p.id) AS like_count,
-            (SELECT COUNT(*) FROM feed_comments c WHERE c.post_id = p.id) AS comment_count
+            (SELECT COUNT(*) FROM feed_comments c WHERE c.post_id = p.id) AS comment_count,
+            EXISTS(SELECT 1 FROM feed_likes l WHERE l.post_id = p.id AND l.user_id = %s) AS liked_by_me
         FROM feed_posts p
         WHERE p.user_id = %s
         ORDER BY p.created_at DESC
-    """, (target_uid,))
+    """, (requester_id, target_uid,))
     print(f"📝 [DEBUG] Gefundene Posts bei User {target_uid}: {len(posts)}")
 
     def vis(p):
@@ -147,7 +149,7 @@ def get_user_profile(target_uid: int):
     for p in visible_posts:
         pid = p["id"]
         p["comments"] = db.query("""
-            SELECT c.id, c.comment, c.created_at, u.display_name, u.avatar_url
+            SELECT c.id, c.content, c.created_at, u.display_name, u.avatar_url
             FROM feed_comments c
             JOIN users u ON u.id = c.user_id
             WHERE c.post_id = %s

@@ -72,6 +72,7 @@ struct ProfilePost: Codable, Identifiable {
     let created_at: Int
     let like_count: Int
     let comment_count: Int
+    let liked_by_me: Bool?
     let likes: [ProfileLike]
     let comments: [ProfileComment]
 }

@@ -98,6 +98,7 @@ struct ChallengesOverviewView: View {
             .overlay(alignment: .bottom) {
                 floatingButtons
             }
+            .id(theme.currentPreset)
         }
     }
 

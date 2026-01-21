@@ -7,6 +7,15 @@ import psycopg2  # fuer IntegrityError
 bp = Blueprint("feed", __name__, url_prefix="/feed")
 db = Database("postgresql://mauro:1234@localhost:5432/socialhabit")
 
+
+def _normalize_visibility(vis: str) -> str:
+    v = (vis or "").lower()
+    if v in ("freunde", "friends"):
+        return "friends"
+    if v in ("privat", "private"):
+        return "private"
+    return "friends"
+
 # ============================================================
 # HILFSFUNKTIONEN
 # ============================================================
@@ -26,11 +35,12 @@ def _friend_ids(uid: int) -> list[int]:
 
 def _is_friend(uid1: int, uid2: int) -> bool:
     """Prueft Freundschaft (reihenfolgeunabhaengig)."""
-    u1, u2 = min(uid1, uid2), max(uid1, uid2)
-    row = db.query_one(
-        "SELECT 1 FROM user_friends WHERE user_id=%s AND friend_id=%s AND status='accepted' LIMIT 1",
-        (u1, u2),
-    )
+    row = db.query_one("""
+        SELECT 1 FROM user_friends 
+        WHERE ((user_id=%s AND friend_id=%s) OR (user_id=%s AND friend_id=%s))
+          AND status='accepted' 
+        LIMIT 1
+    """, (uid1, uid2, uid2, uid1))
     return row is not None
 
 def _visible_for_user(post: dict, uid: int) -> bool:
@@ -39,9 +49,7 @@ def _visible_for_user(post: dict, uid: int) -> bool:
         # Eigene Posts werden NICHT hier beurteilt (siehe Feed-Filter),
         # hier nur fuer Fremde:
         return True
-    vis = (post.get("visibility") or "").lower()
-    if vis == "public":
-        return True
+    vis = _normalize_visibility(post.get("visibility"))
     if vis == "friends":
         return _is_friend(post["user_id"], uid)
     return False
@@ -114,59 +122,130 @@ def _augment_post(post: dict, uid: int) -> dict:
 @auth_required
 def feed():
     """
-    Alle Feed-Posts:
-      - von Freunden (sichtbar fuer uid: visibility IN ('public','friends'))
-      - eigene NUR wenn visibility = 'friends'
-      - erweitert um Challenge-ID, Challenge-Titel & Fortschritt (%)
+    Feed mit Posts + Anzeigen.
+    - Posts von Freunden (visibility='friends')
+    - Eigene Posts (visibility='friends')
+    - Anzeigen alle 6 Posts eingestreut
     """
-    uid = request.uid
-    friend_ids = _friend_ids(uid)
+    try:
+        uid = request.uid
+        friend_ids = _friend_ids(uid)
 
-    # Kandidaten: eigene ID + Freunde
-    visible_ids = friend_ids + [uid]
-    if not visible_ids:
-        return jsonify([])
+        # Kandidaten: eigene ID + Freunde
+        visible_ids = friend_ids + [uid]
+        if not visible_ids:
+            return jsonify([])
 
-    placeholders = ",".join(["%s"] * len(visible_ids))
+        placeholders = ",".join(["%s"] * len(visible_ids))
 
-    # Hauptabfrage: jetzt auch Challenge-Infos joinen
-    posts = db.query(f"""
-        SELECT
-            p.id,
-            p.user_id,
-            p.content,
-            p.image_url,
-            p.visibility,
-            p.progress,
-            p.challenge_id,
-            p.created_at,
-            p.updated_at,
-            u.display_name,
-            u.avatar_url,
-            c.title AS challenge_title
-        FROM feed_posts p
-        JOIN users u ON u.id = p.user_id
-        LEFT JOIN challenges c ON c.id = p.challenge_id
-        WHERE p.user_id IN ({placeholders})
-        ORDER BY p.created_at DESC
-    """, tuple(visible_ids))
+        # Posts laden
+        posts = db.query(f"""
+            SELECT
+                p.id,
+                p.user_id,
+                p.content,
+                p.image_url,
+                p.visibility,
+                p.progress,
+                p.challenge_id,
+                p.created_at,
+                p.updated_at,
+                u.display_name,
+                u.avatar_url,
+                c.title AS challenge_title
+            FROM feed_posts p
+            JOIN users u ON u.id = p.user_id
+            LEFT JOIN challenges c ON c.id = p.challenge_id
+            WHERE p.user_id IN ({placeholders})
+            ORDER BY p.created_at DESC
+        """, tuple(visible_ids))
 
-    # Filter nach Sichtbarkeit
-    visible = []
-    for p in posts:
-        if p["user_id"] == uid:
-            # eigene Posts nur wenn visibility = 'friends'
-            if (p.get("visibility") or "").lower() == "friends":
-                visible.append(p)
-        else:
-            # fremde gemaess Sichtbarkeitsregeln
-            if _visible_for_user(p, uid):
-                visible.append(p)
+        # Filter + Aufbereitung
+        visible_posts = []
+        for p in posts:
+            vis = _normalize_visibility(p.get("visibility"))
+            p["visibility"] = vis
+            
+            if p["user_id"] == uid:
+                if vis == "friends":
+                    visible_posts.append(p)
+            else:
+                if _visible_for_user(p, uid):
+                    visible_posts.append(p)
 
-    # optional: zusätzliche Aufbereitung (z. B. Datum, Format)
-    data = [_augment_post(p, uid) for p in visible]
+        # Posts mit Likes/Comments erweitern
+        for post in visible_posts:
+            post["kind"] = "post"
+            _augment_post(post, uid)
 
-    return jsonify(data)
+        # ===== ADS SECTION =====
+        now = now_ms()
+        ads_list = []
+        try:
+            ads_list = db.query("""
+                SELECT id, image_url, click_url, headline, body, cta_label, weight
+                FROM feed_ads
+                WHERE status='active'
+                  AND (start_at IS NULL OR start_at <= %s)
+                  AND (end_at IS NULL OR end_at >= %s)
+                ORDER BY weight DESC, id
+            """, (now, now)) or []
+        except Exception as e:
+            print(f"⚠️ Ad loading error: {e}")
+
+        # Wenn keine Posts, keine Ads
+        if not visible_posts:
+            return jsonify([])
+
+        # Wenn keine Ads, nur Posts
+        if not ads_list:
+            return jsonify(visible_posts)
+
+        # ===== ADS INJECTION =====
+        result = []
+        ad_slot = 6
+        post_count = 0
+        ad_idx = 0
+
+        for post in visible_posts:
+            result.append(post)
+            post_count += 1
+
+            # Jeden 6. Post eine Ad einstreuen
+            if post_count % ad_slot == 0 and ad_idx < len(ads_list):
+                ad = ads_list[ad_idx]
+                ad_idx += 1
+
+                ad_item = {
+                    "kind": "ad",
+                    "id": ad.get("id"),
+                    "image_url": ad.get("image_url"),
+                    "click_url": ad.get("click_url"),
+                    "headline": ad.get("headline"),
+                    "body": ad.get("body"),
+                    "cta_label": ad.get("cta_label"),
+                }
+                result.append(ad_item)
+
+                # Impression tracken
+                try:
+                    db.insert("feed_ad_events", {
+                        "ad_id": ad.get("id"),
+                        "user_id": uid,
+                        "event_type": "impression",
+                        "created_at": now_ms()
+                    })
+                    db.raw("UPDATE feed_ads SET impressions = impressions + 1 WHERE id=%s", (ad.get("id"),))
+                except Exception as e:
+                    print(f"⚠️ Impression tracking error: {e}")
+
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"❌ Feed error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 
@@ -183,7 +262,7 @@ def like_post(pid: int):
         return jsonify({"error": "not_found"}), 404
 
     if post["user_id"] == uid:
-        if (post.get("visibility") or "").lower() != "friends":
+        if _normalize_visibility(post.get("visibility")) != "friends":
             return jsonify({"error": "forbidden"}), 403
     else:
         if not _visible_for_user(post, uid):
@@ -213,7 +292,7 @@ def unlike_post(pid: int):
         return jsonify({"error": "not_found"}), 404
 
     if post["user_id"] == uid:
-        if (post.get("visibility") or "").lower() != "friends":
+        if _normalize_visibility(post.get("visibility")) != "friends":
             return jsonify({"error": "forbidden"}), 403
     else:
         if not _visible_for_user(post, uid):
@@ -236,7 +315,7 @@ def get_comments(pid: int):
         return jsonify({"error": "not_found"}), 404
 
     if post["user_id"] == uid:
-        if (post.get("visibility") or "").lower() != "friends":
+        if _normalize_visibility(post.get("visibility")) != "friends":
             return jsonify({"error": "forbidden"}), 403
     else:
         if not _visible_for_user(post, uid):
@@ -275,8 +354,9 @@ def add_comment(pid: int):
     cid = db.insert("feed_comments", {
         "post_id": pid,
         "user_id": uid,
-        "comment": text,
+        "content": text,
         "created_at": now,
+        "updated_at": now,
     })
 
     _notify_post_owner(pid, uid, "jemand hat deinen Beitrag kommentiert", "feed_comment")
@@ -288,6 +368,26 @@ def add_comment(pid: int):
         "text": text,
         "created_at": now
     }), 201
+
+
+# ============================================================
+# AD EVENTS
+# ============================================================
+
+@bp.post("/ads/<int:aid>/click")
+@auth_required
+def track_ad_click(aid: int):
+    ad = db.query_one("SELECT id FROM feed_ads WHERE id=%s", (aid,))
+    if not ad:
+        return jsonify({"error": "not_found"}), 404
+    db.insert("feed_ad_events", {
+        "ad_id": aid,
+        "user_id": request.uid,
+        "event_type": "click",
+        "created_at": now_ms()
+    })
+    db.raw("UPDATE feed_ads SET clicks = clicks + 1 WHERE id=%s", (aid,))
+    return jsonify({"ok": True})
 
 @bp.delete("/<int:pid>/comments/<int:cid>")
 @auth_required

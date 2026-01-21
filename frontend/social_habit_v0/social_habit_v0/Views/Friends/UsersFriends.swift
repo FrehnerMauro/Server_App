@@ -10,7 +10,7 @@ struct UsersFriendsView: View {
 
     @State private var errorMessage: String?
     @State private var profile: ProfileMeResponse?
-    @State private var likedPosts: Set<Int> = []
+    @State private var likedPosts: [Int: Bool] = [:]  // Tracking von lokalen Like-Änderungen
     @State private var expandedPostId: Int? = nil
 
     // Report / Remove friend
@@ -199,7 +199,9 @@ struct UsersFriendsView: View {
 
     // MARK: - Einzelner Post
     private func profilePostCard(_ p: ProfilePost) -> some View {
-        let isLiked = likedPosts.contains(p.id)
+        // Verwende den lokalen Override, falls vorhanden, sonst Server-Wert
+        let isLiked = likedPosts[p.id] ?? (p.liked_by_me ?? false)
+        let currentLikeCount = p.like_count + (isLiked != (p.liked_by_me ?? false) ? (isLiked ? 1 : -1) : 0)
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -241,7 +243,7 @@ struct UsersFriendsView: View {
                     HStack {
                         Image(systemName: isLiked ? "heart.fill" : "heart")
                             .foregroundColor(isLiked ? .pink : .white)
-                        Text("\(p.like_count + (isLiked ? 1 : 0))")
+                        Text("\(currentLikeCount)")
                             .font(.subheadline.weight(.semibold))
                             .foregroundColor(.white)
                     }
@@ -334,15 +336,25 @@ struct UsersFriendsView: View {
 
     // MARK: - Aktionen
     private func toggleLike(_ post: ProfilePost) async {
+        let currentLikedState = likedPosts[post.id] ?? (post.liked_by_me ?? false)
+        let newLikedState = !currentLikedState
+        
+        // Optimistisches Update
+        await MainActor.run {
+            likedPosts[post.id] = newLikedState
+        }
+        
         do {
-            if likedPosts.contains(post.id) {
-                try await Api_Feed.feedUnlike(postId: post.id)
-                await MainActor.run { likedPosts.remove(post.id) }
-            } else {
+            if newLikedState {
                 try await Api_Feed.feedLike(postId: post.id)
-                await MainActor.run { likedPosts.insert(post.id) }
+            } else {
+                try await Api_Feed.feedUnlike(postId: post.id)
             }
         } catch {
+            // Rollback bei Fehler
+            await MainActor.run {
+                likedPosts[post.id] = currentLikedState
+            }
             print("❌ Fehler beim Liken: \(error.localizedDescription)")
         }
     }

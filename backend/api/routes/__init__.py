@@ -7,6 +7,7 @@ from backend.api.routes import (
     challenge_routes,
     friend_routes,
     notification_routes,
+    billing_routes,
 )
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "challenge_routes",
     "friend_routes",
     "notification_routes",
+    "billing_routes",
 ]

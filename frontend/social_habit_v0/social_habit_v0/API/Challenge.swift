@@ -520,6 +520,12 @@ struct ChallengeInfoResponse: Codable {
         let display_name: String
         let avatar_url: String?
         let joined_at: Int?
+        let blocked: String?  // "not_started", "pending", "run", "completed"
+        let today_pending: Int?  // 1 = heute fällig, 0 = nicht fällig
+        let today_done: Int?  // 1 = heute erledigt, 0 = nicht erledigt
+        let conf_count: Int?
+        let fail_count: Int?
+        let status: String?  // "creator", "accepted", "pending"
     }
 
     let challenge: ChallengeInfo

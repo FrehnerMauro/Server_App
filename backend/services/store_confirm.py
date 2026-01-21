@@ -3,6 +3,15 @@ from typing import Optional
 
 db = Database("postgresql://mauro:1234@localhost:5432/socialhabit")
 
+
+def _normalize_visibility(vis: Optional[str]) -> str:
+    v = (vis or "friends").lower()
+    if v in ("freunde", "friends"):
+        return "friends"
+    if v in ("privat", "private"):
+        return "private"
+    return "friends"
+
 def add_challenge_confirm(
     challenge_id: int,
     user_id: int,
@@ -18,7 +27,7 @@ def add_challenge_confirm(
     """
 
     ts = now_ms()
-    visibility = (visibility or "freunde").lower()
+    visibility = _normalize_visibility(visibility)
     caption = caption or None
 
     # 1️⃣ Challenge-Log
