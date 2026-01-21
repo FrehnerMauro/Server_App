@@ -1,0 +1,588 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		6470FBBC2E957239006807F3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6470FBBB2E957239006807F3 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		64ADB3C12E6F03D0001F28E0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 64ADB3AB2E6F03CE001F28E0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 64ADB3B22E6F03CE001F28E0;
+			remoteInfo = social_habit_v0;
+		};
+		64ADB3CB2E6F03D0001F28E0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 64ADB3AB2E6F03CE001F28E0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 64ADB3B22E6F03CE001F28E0;
+			remoteInfo = social_habit_v0;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		6470FBBB2E957239006807F3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		64ADB3B32E6F03CE001F28E0 /* steady turtle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "steady turtle.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		64ADB3C02E6F03D0001F28E0 /* social_habit_v0Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = social_habit_v0Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		64ADB3CA2E6F03D0001F28E0 /* social_habit_v0UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = social_habit_v0UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		64ADB3B52E6F03CE001F28E0 /* social_habit_v0 */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = social_habit_v0;
+			sourceTree = "<group>";
+		};
+		64ADB3C32E6F03D0001F28E0 /* social_habit_v0Tests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = social_habit_v0Tests;
+			sourceTree = "<group>";
+		};
+		64ADB3CD2E6F03D0001F28E0 /* social_habit_v0UITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = social_habit_v0UITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		64ADB3B02E6F03CE001F28E0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		64ADB3BD2E6F03D0001F28E0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		64ADB3C72E6F03D0001F28E0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		64ADB3AA2E6F03CE001F28E0 = {
+			isa = PBXGroup;
+			children = (
+				6470FBBB2E957239006807F3 /* Assets.xcassets */,
+				64ADB3B52E6F03CE001F28E0 /* social_habit_v0 */,
+				64ADB3C32E6F03D0001F28E0 /* social_habit_v0Tests */,
+				64ADB3CD2E6F03D0001F28E0 /* social_habit_v0UITests */,
+				64ADB3B42E6F03CE001F28E0 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		64ADB3B42E6F03CE001F28E0 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				64ADB3B32E6F03CE001F28E0 /* steady turtle.app */,
+				64ADB3C02E6F03D0001F28E0 /* social_habit_v0Tests.xctest */,
+				64ADB3CA2E6F03D0001F28E0 /* social_habit_v0UITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		64ADB3B22E6F03CE001F28E0 /* social_habit_v0 */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 64ADB3D42E6F03D0001F28E0 /* Build configuration list for PBXNativeTarget "social_habit_v0" */;
+			buildPhases = (
+				64ADB3AF2E6F03CE001F28E0 /* Sources */,
+				64ADB3B02E6F03CE001F28E0 /* Frameworks */,
+				64ADB3B12E6F03CE001F28E0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				64ADB3B52E6F03CE001F28E0 /* social_habit_v0 */,
+			);
+			name = social_habit_v0;
+			packageProductDependencies = (
+			);
+			productName = social_habit_v0;
+			productReference = 64ADB3B32E6F03CE001F28E0 /* steady turtle.app */;
+			productType = "com.apple.product-type.application";
+		};
+		64ADB3BF2E6F03D0001F28E0 /* social_habit_v0Tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 64ADB3D72E6F03D0001F28E0 /* Build configuration list for PBXNativeTarget "social_habit_v0Tests" */;
+			buildPhases = (
+				64ADB3BC2E6F03D0001F28E0 /* Sources */,
+				64ADB3BD2E6F03D0001F28E0 /* Frameworks */,
+				64ADB3BE2E6F03D0001F28E0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				64ADB3C22E6F03D0001F28E0 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				64ADB3C32E6F03D0001F28E0 /* social_habit_v0Tests */,
+			);
+			name = social_habit_v0Tests;
+			packageProductDependencies = (
+			);
+			productName = social_habit_v0Tests;
+			productReference = 64ADB3C02E6F03D0001F28E0 /* social_habit_v0Tests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		64ADB3C92E6F03D0001F28E0 /* social_habit_v0UITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 64ADB3DA2E6F03D0001F28E0 /* Build configuration list for PBXNativeTarget "social_habit_v0UITests" */;
+			buildPhases = (
+				64ADB3C62E6F03D0001F28E0 /* Sources */,
+				64ADB3C72E6F03D0001F28E0 /* Frameworks */,
+				64ADB3C82E6F03D0001F28E0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				64ADB3CC2E6F03D0001F28E0 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				64ADB3CD2E6F03D0001F28E0 /* social_habit_v0UITests */,
+			);
+			name = social_habit_v0UITests;
+			packageProductDependencies = (
+			);
+			productName = social_habit_v0UITests;
+			productReference = 64ADB3CA2E6F03D0001F28E0 /* social_habit_v0UITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		64ADB3AB2E6F03CE001F28E0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1640;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					64ADB3B22E6F03CE001F28E0 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					64ADB3BF2E6F03D0001F28E0 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = 64ADB3B22E6F03CE001F28E0;
+					};
+					64ADB3C92E6F03D0001F28E0 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = 64ADB3B22E6F03CE001F28E0;
+					};
+				};
+			};
+			buildConfigurationList = 64ADB3AE2E6F03CE001F28E0 /* Build configuration list for PBXProject "social_habit_v0" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 64ADB3AA2E6F03CE001F28E0;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 64ADB3B42E6F03CE001F28E0 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				64ADB3B22E6F03CE001F28E0 /* social_habit_v0 */,
+				64ADB3BF2E6F03D0001F28E0 /* social_habit_v0Tests */,
+				64ADB3C92E6F03D0001F28E0 /* social_habit_v0UITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		64ADB3B12E6F03CE001F28E0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6470FBBC2E957239006807F3 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		64ADB3BE2E6F03D0001F28E0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		64ADB3C82E6F03D0001F28E0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		64ADB3AF2E6F03CE001F28E0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		64ADB3BC2E6F03D0001F28E0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		64ADB3C62E6F03D0001F28E0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		64ADB3C22E6F03D0001F28E0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 64ADB3B22E6F03CE001F28E0 /* social_habit_v0 */;
+			targetProxy = 64ADB3C12E6F03D0001F28E0 /* PBXContainerItemProxy */;
+		};
+		64ADB3CC2E6F03D0001F28E0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 64ADB3B22E6F03CE001F28E0 /* social_habit_v0 */;
+			targetProxy = 64ADB3CB2E6F03D0001F28E0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		64ADB3D22E6F03D0001F28E0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		64ADB3D32E6F03D0001F28E0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		64ADB3D52E6F03D0001F28E0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = social_habit_v0/social_habit_v0.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3K5KBM3JF2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "social-habit-v0-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = SteadyTurtle;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
+				INFOPLIST_KEY_NSCameraUsageDescription = "gib kamera du sack";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 3;
+				PRODUCT_BUNDLE_IDENTIFIER = "MauroFrehner.social-habit-v1";
+				PRODUCT_NAME = "steady turtle";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		64ADB3D62E6F03D0001F28E0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = social_habit_v0/social_habit_v0.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3K5KBM3JF2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "social-habit-v0-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = SteadyTurtle;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
+				INFOPLIST_KEY_NSCameraUsageDescription = "gib kamera du sack";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 3;
+				PRODUCT_BUNDLE_IDENTIFIER = "MauroFrehner.social-habit-v1";
+				PRODUCT_NAME = "steady turtle";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		64ADB3D82E6F03D0001F28E0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3K5KBM3JF2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "social-habit-v0Tests-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Frehnertec.ch.social-habit-v0Tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/social_habit_v0.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/social_habit_v0";
+			};
+			name = Debug;
+		};
+		64ADB3D92E6F03D0001F28E0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3K5KBM3JF2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "social-habit-v0Tests-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Frehnertec.ch.social-habit-v0Tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/social_habit_v0.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/social_habit_v0";
+			};
+			name = Release;
+		};
+		64ADB3DB2E6F03D0001F28E0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3K5KBM3JF2;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "steady-turtle-v0UITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = social_habit_v0;
+			};
+			name = Debug;
+		};
+		64ADB3DC2E6F03D0001F28E0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 3K5KBM3JF2;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "steady-turtle-v0UITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = social_habit_v0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		64ADB3AE2E6F03CE001F28E0 /* Build configuration list for PBXProject "social_habit_v0" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				64ADB3D22E6F03D0001F28E0 /* Debug */,
+				64ADB3D32E6F03D0001F28E0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		64ADB3D42E6F03D0001F28E0 /* Build configuration list for PBXNativeTarget "social_habit_v0" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				64ADB3D52E6F03D0001F28E0 /* Debug */,
+				64ADB3D62E6F03D0001F28E0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		64ADB3D72E6F03D0001F28E0 /* Build configuration list for PBXNativeTarget "social_habit_v0Tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				64ADB3D82E6F03D0001F28E0 /* Debug */,
+				64ADB3D92E6F03D0001F28E0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		64ADB3DA2E6F03D0001F28E0 /* Build configuration list for PBXNativeTarget "social_habit_v0UITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				64ADB3DB2E6F03D0001F28E0 /* Debug */,
+				64ADB3DC2E6F03D0001F28E0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 64ADB3AB2E6F03CE001F28E0 /* Project object */;
+}

@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Werbeverwaltung – Admin</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .login-section {
+            max-width: 400px;
+            margin: 50px auto;
+        }
+        .section {
+            margin-bottom: 40px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        button.secondary {
+            background: #6c757d;
+        }
+        button.secondary:hover {
+            background: #5a6268;
+        }
+        button.danger {
+            background: #dc3545;
+        }
+        button.danger:hover {
+            background: #c82333;
+        }
+        button.success {
+            background: #28a745;
+        }
+        button.success:hover {
+            background: #218838;
+        }
+        .ads-list {
+            display: grid;
+            gap: 20px;
+        }
+        .ad-card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            gap: 20px;
+        }
+        .ad-image {
+            width: 150px;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 6px;
+            background: #f0f0f0;
+        }
+        .ad-content {
+            flex: 1;
+        }
+        .ad-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 10px;
+        }
+        .ad-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+        .ad-status {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .ad-status.active {
+            background: #d4edda;
+            color: #155724;
+        }
+        .ad-status.draft {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .ad-status.paused {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .ad-meta {
+            color: #666;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+        .ad-stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+            font-size: 13px;
+            color: #666;
+        }
+        .ad-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 15px;
+        }
+        .ad-actions button {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        .message {
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .upload-preview {
+            margin-top: 10px;
+            max-width: 300px;
+        }
+        .upload-preview img {
+            width: 100%;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+        }
+        .hidden {
+            display: none;
+        }
+        .logout-btn {
+            float: right;
+            background: #6c757d;
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        @media (max-width: 768px) {
+            .row {
+                grid-template-columns: 1fr;
+            }
+            .ad-card {
+                flex-direction: column;
+            }
+            .ad-image {
+                width: 100%;
+                height: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Login Section -->
+        <div id="loginSection" class="login-section">
+            <h1>🎯 Werbeverwaltung</h1>
+            <p class="subtitle">Admin-Login erforderlich</p>
+            <div class="form-group">
+                <label>E-Mail</label>
+                <input type="email" id="loginEmail" placeholder="admin@example.com">
+            </div>
+            <div class="form-group">
+                <label>Passwort</label>
+                <input type="password" id="loginPassword" placeholder="••••••••">
+            </div>
+            <button onclick="login()">Anmelden</button>
+            <div id="loginMessage"></div>
+        </div>
+
+        <!-- Main Content -->
+        <div id="mainContent" class="hidden">
+            <h1>🎯 Werbeverwaltung</h1>
+            <p class="subtitle">Erstelle und verwalte Feed-Anzeigen</p>
+            <button class="logout-btn" onclick="logout()">Abmelden</button>
+            <div style="clear: both;"></div>
+
+            <div id="messageBox"></div>
+
+            <!-- Upload Section -->
+            <div class="section">
+                <h2>📤 Bild hochladen</h2>
+                <div class="form-group">
+                    <label>Datei auswählen</label>
+                    <input type="file" id="uploadFile" accept="image/*" onchange="previewImage()">
+                </div>
+                <div id="uploadPreview" class="upload-preview hidden"></div>
+                <button onclick="uploadImage()">Hochladen</button>
+            </div>
+
+            <!-- Create Ad Section -->
+            <div class="section">
+                <h2>➕ Neue Anzeige erstellen</h2>
+                <div class="form-group">
+                    <label>Bild-URL *</label>
+                    <input type="text" id="newImageUrl" placeholder="/static/ads/... oder externe URL">
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>Überschrift</label>
+                        <input type="text" id="newHeadline" placeholder="z.B. Jetzt 20% Rabatt!">
+                    </div>
+                    <div class="form-group">
+                        <label>CTA-Button Text</label>
+                        <input type="text" id="newCtaLabel" placeholder="z.B. Mehr erfahren">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Beschreibung</label>
+                    <textarea id="newBody" placeholder="Kurzbeschreibung der Anzeige..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Ziel-URL (Click-Link)</label>
+                    <input type="text" id="newClickUrl" placeholder="https://example.com">
+                </div>
+                <div class="row">
+                    <div class="form-group">
+                        <label>Gewichtung</label>
+                        <input type="number" id="newWeight" value="1" min="1" max="100">
+                        <small style="color: #666;">Höhere Werte = öfter im Feed</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select id="newStatus">
+                            <option value="draft">Entwurf</option>
+                            <option value="active">Aktiv</option>
+                            <option value="paused">Pausiert</option>
+                        </select>
+                    </div>
+                </div>
+                <button onclick="createAd()">Anzeige erstellen</button>
+            </div>
+
+            <!-- Ads List -->
+            <div class="section">
+                <h2>📋 Alle Anzeigen</h2>
+                <button onclick="loadAds()" class="secondary" style="margin-bottom: 15px;">🔄 Aktualisieren</button>
+                <div id="adsList" class="ads-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://api.socialhabit.org';
+        let authHeader = '';
+
+        // Login
+        function login() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            if (!email || !password) {
+                showMessage('loginMessage', 'Bitte E-Mail und Passwort eingeben', 'error');
+                return;
+            }
+
+            authHeader = 'Basic ' + btoa(email + ':' + password);
+            
+            // Test-Request
+            fetch(`${API_BASE}/admin/ads`, {
+                headers: { 'Authorization': authHeader }
+            })
+            .then(r => r.ok ? r.json() : Promise.reject(r))
+            .then(() => {
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('mainContent').classList.remove('hidden');
+                loadAds();
+            })
+            .catch(() => {
+                showMessage('loginMessage', 'Login fehlgeschlagen. Prüfe deine Zugangsdaten.', 'error');
+                authHeader = '';
+            });
+        }
+
+        function logout() {
+            authHeader = '';
+            document.getElementById('loginSection').classList.remove('hidden');
+            document.getElementById('mainContent').classList.add('hidden');
+            document.getElementById('loginEmail').value = '';
+            document.getElementById('loginPassword').value = '';
+        }
+
+        // Upload
+        function previewImage() {
+            const file = document.getElementById('uploadFile').files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const preview = document.getElementById('uploadPreview');
+                preview.innerHTML = `<img src="${e.target.result}" alt="Preview">`;
+                preview.classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function uploadImage() {
+            const file = document.getElementById('uploadFile').files[0];
+            if (!file) {
+                showMessage('messageBox', 'Bitte eine Datei auswählen', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch(`${API_BASE}/admin/ads/upload`, {
+                method: 'POST',
+                headers: { 'Authorization': authHeader },
+                body: formData
+            })
+            .then(r => r.ok ? r.json() : Promise.reject(r))
+            .then(data => {
+                showMessage('messageBox', `✅ Upload erfolgreich: ${data.image_url}`, 'success');
+                document.getElementById('newImageUrl').value = data.image_url;
+                document.getElementById('uploadFile').value = '';
+                document.getElementById('uploadPreview').classList.add('hidden');
+            })
+            .catch(() => {
+                showMessage('messageBox', '❌ Upload fehlgeschlagen', 'error');
+            });
+        }
+
+        // Create Ad
+        function createAd() {
+            const imageUrl = document.getElementById('newImageUrl').value.trim();
+            if (!imageUrl) {
+                showMessage('messageBox', 'Bitte Bild-URL angeben', 'error');
+                return;
+            }
+
+            const payload = {
+                image_url: imageUrl,
+                headline: document.getElementById('newHeadline').value.trim() || null,
+                body: document.getElementById('newBody').value.trim() || null,
+                click_url: document.getElementById('newClickUrl').value.trim() || null,
+                cta_label: document.getElementById('newCtaLabel').value.trim() || null,
+                weight: parseInt(document.getElementById('newWeight').value) || 1,
+                status: document.getElementById('newStatus').value
+            };
+
+            fetch(`${API_BASE}/admin/ads`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': authHeader,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.ok ? r.json() : Promise.reject(r))
+            .then(data => {
+                showMessage('messageBox', `✅ Anzeige #${data.ad_id} erstellt`, 'success');
+                // Clear form
+                document.getElementById('newImageUrl').value = '';
+                document.getElementById('newHeadline').value = '';
+                document.getElementById('newBody').value = '';
+                document.getElementById('newClickUrl').value = '';
+                document.getElementById('newCtaLabel').value = '';
+                document.getElementById('newWeight').value = '1';
+                document.getElementById('newStatus').value = 'draft';
+                loadAds();
+            })
+            .catch(() => {
+                showMessage('messageBox', '❌ Fehler beim Erstellen', 'error');
+            });
+        }
+
+        // Load Ads
+        function loadAds() {
+            fetch(`${API_BASE}/admin/ads`, {
+                headers: { 'Authorization': authHeader }
+            })
+            .then(r => r.ok ? r.json() : Promise.reject(r))
+            .then(data => {
+                renderAds(data.ads);
+            })
+            .catch(() => {
+                showMessage('messageBox', '❌ Fehler beim Laden der Anzeigen', 'error');
+            });
+        }
+
+        function renderAds(ads) {
+            const container = document.getElementById('adsList');
+            if (!ads || ads.length === 0) {
+                container.innerHTML = '<p style="color: #666;">Noch keine Anzeigen vorhanden.</p>';
+                return;
+            }
+
+            container.innerHTML = ads.map(ad => `
+                <div class="ad-card">
+                    <img src="${ad.image_url}" class="ad-image" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22150%22 height=%22150%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22150%22 height=%22150%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22%3EKein Bild%3C/text%3E%3C/svg%3E'">
+                    <div class="ad-content">
+                        <div class="ad-header">
+                            <div class="ad-title">${ad.headline || 'Anzeige #' + ad.id}</div>
+                            <div class="ad-status ${ad.status}">${ad.status === 'active' ? 'Aktiv' : ad.status === 'draft' ? 'Entwurf' : 'Pausiert'}</div>
+                        </div>
+                        <div class="ad-meta">
+                            ${ad.body || 'Keine Beschreibung'}
+                        </div>
+                        <div class="ad-meta">
+                            🔗 ${ad.click_url || 'Kein Link'}
+                        </div>
+                        <div class="ad-stats">
+                            <span>👁️ ${ad.impressions} Impressions</span>
+                            <span>👆 ${ad.clicks} Klicks</span>
+                            <span>⚖️ Gewicht: ${ad.weight}</span>
+                        </div>
+                        <div class="ad-actions">
+                            ${ad.status !== 'active' ? `<button class="success" onclick="activateAd(${ad.id})">✅ Aktivieren</button>` : ''}
+                            ${ad.status === 'active' ? `<button class="danger" onclick="pauseAd(${ad.id})">⏸️ Pausieren</button>` : ''}
+                            <button class="secondary" onclick="editAd(${ad.id})">✏️ Bearbeiten</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Actions
+        function activateAd(id) {
+            fetch(`${API_BASE}/admin/ads/${id}/activate`, {
+                method: 'POST',
+                headers: { 'Authorization': authHeader }
+            })
+            .then(r => r.ok ? r.json() : Promise.reject(r))
+            .then(() => {
+                showMessage('messageBox', `✅ Anzeige #${id} aktiviert`, 'success');
+                loadAds();
+            })
+            .catch(() => {
+                showMessage('messageBox', '❌ Fehler beim Aktivieren', 'error');
+            });
+        }
+
+        function pauseAd(id) {
+            fetch(`${API_BASE}/admin/ads/${id}/pause`, {
+                method: 'POST',
+                headers: { 'Authorization': authHeader }
+            })
+            .then(r => r.ok ? r.json() : Promise.reject(r))
+            .then(() => {
+                showMessage('messageBox', `⏸️ Anzeige #${id} pausiert`, 'success');
+                loadAds();
+            })
+            .catch(() => {
+                showMessage('messageBox', '❌ Fehler beim Pausieren', 'error');
+            });
+        }
+
+        function editAd(id) {
+            const newHeadline = prompt('Neue Überschrift (leer = keine Änderung):');
+            if (!newHeadline) return;
+
+            fetch(`${API_BASE}/admin/ads/${id}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': authHeader,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ headline: newHeadline })
+            })
+            .then(r => r.ok ? r.json() : Promise.reject(r))
+            .then(() => {
+                showMessage('messageBox', `✅ Anzeige #${id} aktualisiert`, 'success');
+                loadAds();
+            })
+            .catch(() => {
+                showMessage('messageBox', '❌ Fehler beim Aktualisieren', 'error');
+            });
+        }
+
+        // Helper
+        function showMessage(containerId, text, type) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = `<div class="message ${type}">${text}</div>`;
+            setTimeout(() => container.innerHTML = '', 5000);
+        }
+    </script>
+</body>
+</html>

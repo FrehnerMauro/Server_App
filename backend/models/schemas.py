@@ -1,17 +1,18 @@
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 # Auth
-class RegisterBody(BaseModel):
-    vorname: Optional[str] = None
-    name: str
-    email: EmailStr
-    passwort: str
-    avatar: Optional[str] = None
-
 class LoginBody(BaseModel):
-    email: EmailStr
-    passwort: str
+    email: str
+    password: str 
+
+class RegisterBody(BaseModel):
+    vorname: str
+    name: str
+    email: str
+    password: str 
+    avatar: str | None = None
+    nb_state: Optional[str] = None
 
 # Challenges
 class CreateChallengeBody(BaseModel):
@@ -31,7 +32,7 @@ class ChatBody(BaseModel):
 class ConfirmBody(BaseModel):
     imageUrl: str
     caption: Optional[str] = None
-    visibility: Optional[str] = "freunde"
+    visibility: Optional[str] = "friends"  # 'friends' oder 'private'
     user_id: Optional[int] = None
     challenge_id: Optional[int] = None
     timestamp: Optional[int] = None
